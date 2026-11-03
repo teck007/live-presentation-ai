@@ -92,6 +92,14 @@ Abrir el navegador en http://localhost:5173, grabar la voz y presionar **Transcr
 | Variable | Default | Descripción |
 |---|---|---|
 | MODEL_API_KEY | (vacía) | Key `LLM_...`, solo backend. Nunca exponer en el frontend |
+| OPENROUTER_API_KEY | (vacía) | Key de OpenRouter para el gate Jev, solo backend. Nunca usar `VITE_*` |
+| JEV_MODEL | typesafe/jev-1.13 | Modelo del gate de decisiones (endpoint Decisions, no chat) |
+| JEV_TOPIC_P | 0.6 | Umbral de probabilidad on-topic para considerar relevante |
+| JEV_ACTION_CONF | 0.65 | Confianza mínima de slide_action; debajo hay fail-open |
+| JEV_TIMEOUT_MS | 2500 | Timeout del gate Jev; en error/timeout hay fail-open al flujo actual |
+| SLIDE_WINDOW_S | 10 | Ventana de voz acumulada (VAD-time) que fuerza evaluación sin speechComplete; 0 = off |
+| WINDOW_DUTY_CYCLE | (vacío) | Ciclo de trabajo de la ventana, ej. `10/30`; vacío = siempre activa |
+| SLIDE_CONTEXT_CHARS | 600 | Cola de caracteres de transcripts para fusión en update |
 | META_ASR_URL | https://api.meta.ai/v1/asr/transcribe | Endpoint de Meta |
 | ASR_MODEL | muse-voice-transcribe-1.0 | Modelo de transcripción |
 | VITE_API_BASE_URL | http://localhost:8000 | URL del backend (frontend, archivo `frontend/.env`) |
