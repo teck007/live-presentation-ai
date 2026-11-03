@@ -66,6 +66,27 @@
         </p>
       </div>
 
+      <div class="mt-3">
+        <label class="block text-sm font-medium text-slate-300" for="presentation-audience">
+          Audiencia
+        </label>
+        <select
+          id="presentation-audience"
+          :value="presentationAudience"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+          @change="emit('update:audience', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="ninos">Ninos</option>
+          <option value="estudiantes">Estudiantes</option>
+          <option value="general">General</option>
+          <option value="profesionales">Profesionales</option>
+          <option value="expertos">Expertos</option>
+        </select>
+        <p class="mt-1 text-xs text-slate-500">
+          Ajusta el tono y la profundidad de cada slide.
+        </p>
+      </div>
+
       <div v-if="notice" class="mt-3 rounded-xl bg-blue-500/15 p-3 text-sm text-blue-200" role="status">
         {{ notice }}
       </div>
@@ -210,6 +231,7 @@ defineProps<{
   liveActive: boolean;
   clearDisabled: boolean;
   presentationTopic: string;
+  presentationAudience: string;
   notice: string | null;
   error: string | null;
   prefilterEnabled: boolean;
@@ -232,6 +254,7 @@ const emit = defineEmits<{
   (e: "stop-live"): void;
   (e: "clear-live"): void;
   (e: "update:topic", value: string): void;
+  (e: "update:audience", value: string): void;
   (e: "prefilter-enabled", value: boolean): void;
   (e: "prefilter-threshold", value: number): void;
   (e: "batch-transcribe"): void;

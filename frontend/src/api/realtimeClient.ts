@@ -22,6 +22,15 @@ function deriveWsUrl(): string {
   }
 }
 
+export interface SessionConfig {
+  silencePauseMs?: number;
+  topic?: string;
+  keywords?: string[];
+  topicVersion?: number;
+  palette_id?: string;
+  audience?: string;
+}
+
 export type RealtimeClientEvents = {
   onEvent: (event: ServerEvent) => void;
   onOpen?: () => void;
@@ -39,6 +48,7 @@ export class RealtimeClient {
   private manualClose = false;
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingConfig: SessionConfig | null = null;
   readonly url: string;
 
   constructor(events: RealtimeClientEvents, url?: string) {
@@ -50,16 +60,33 @@ export class RealtimeClient {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
-  connect(silencePauseMs?: number): void {
+  connect(silencePauseMsOrOptions?: number | SessionConfig): void {
     this.manualClose = false;
     this.disconnect(1000, "reconnect");
+    const options: SessionConfig =
+      typeof silencePauseMsOrOptions === "number"
+        ? { silencePauseMs: silencePauseMsOrOptions }
+        : (silencePauseMsOrOptions ?? {});
     const socket = new WebSocket(this.url);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.onopen = () => {
       this.retries = 0;
-      if (silencePauseMs) {
-        this.sendControl({ type: "config", silencePauseMs });
+      const config: Record<string, unknown> = { type: "config" };
+      if (options.silencePauseMs) config.silencePauseMs = options.silencePauseMs;
+      if (options.topic !== undefined) config.topic = options.topic;
+      if (options.keywords !== undefined) config.keywords = options.keywords;
+      if (options.topicVersion !== undefined) config.topicVersion = options.topicVersion;
+      if (options.palette_id !== undefined) config.palette_id = options.palette_id;
+      if (options.audience !== undefined) config.audience = options.audience;
+      if (Object.keys(config).length > 1) {
+        this.sendControl(config);
+      }
+      // Flush config queued before OPEN (avoids sendSessionConfig race after start()).
+      if (this.pendingConfig) {
+        const queued = this.pendingConfig;
+        this.pendingConfig = null;
+        this.sendSessionConfig(queued);
       }
       this.events.onOpen?.();
     };
@@ -67,6 +94,7 @@ export class RealtimeClient {
       if (typeof ev.data !== "string") return;
       try {
         const parsed = JSON.parse(ev.data) as ServerEvent;
+        // Passthrough sin filtrar: los eventos slide_* llegan intactos al listener.
         if (parsed && typeof parsed.type === "string") {
           this.events.onEvent(parsed);
         }
@@ -85,7 +113,7 @@ export class RealtimeClient {
       if (this.retries < 3) {
         const delay = [1000, 2000, 4000][this.retries] ?? 4000;
         this.retries += 1;
-        this.retryTimer = setTimeout(() => this.connect(silencePauseMs), delay);
+        this.retryTimer = setTimeout(() => this.connect(options), delay);
       }
     };
   }
@@ -104,6 +132,22 @@ export class RealtimeClient {
 
   notifyIdlePause(): void {
     this.sendControl({ type: "idle_pause" });
+  }
+
+  /** Envía topic/keywords/version al backend (frame `config`). Queues until OPEN. */
+  sendSessionConfig(config: Omit<SessionConfig, "silencePauseMs">): void {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      const payload: Record<string, unknown> = { type: "config" };
+      if (config.topic !== undefined) payload.topic = config.topic;
+      if (config.keywords !== undefined) payload.keywords = config.keywords;
+      if (config.topicVersion !== undefined) payload.topicVersion = config.topicVersion;
+      if (config.palette_id !== undefined) payload.palette_id = config.palette_id;
+      if (config.audience !== undefined) payload.audience = config.audience;
+      this.sendControl(payload);
+      return;
+    }
+    // Socket not OPEN yet (e.g. sendSessionConfig right after start()): queue for onopen.
+    this.pendingConfig = { ...(this.pendingConfig ?? {}), ...config };
   }
 
   disconnect(code = 1000, reason = "done"): void {

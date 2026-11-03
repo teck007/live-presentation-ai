@@ -5,6 +5,7 @@ import type { AudioPrefilter } from "./useAudioPrefilter";
 import type {
   RealtimeStatus,
   ServerEvent,
+  SlideWsEvent,
   TranscriptItem,
   TurnState,
 } from "../types";
@@ -47,18 +48,23 @@ interface FrameMessage {
  * Semantica de parciales CUMULATIVE: reemplaza, no agrega.
  * Sin turnId en el parcial: pertenece al ultimo speechStart.
  */
-export function useRealtimeTranscription() {
+export function useRealtimeTranscription(options?: {
+  onSlideEvent?: (event: SlideWsEvent) => void;
+}) {
   const status = ref<RealtimeStatus>("idle");
   const error = ref<string | null>(null);
   const notice = ref<string | null>(null);
   const finalItems = ref<TranscriptItem[]>([]);
   const serverPaused = ref(false);
+  // Versión de topic vigente reflejada del backend (eventos slide_* la portan).
+  const topicVersion = ref(1);
 
   const turnMap = ref<Map<string, TurnState>>(new Map());
   const turnOrder = ref<string[]>([]);
   let lastActiveTurnId: string | null = null;
 
   let client: RealtimeClient | null = null;
+  let pendingSessionConfig: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string } | null = null;
   let audioContext: AudioContext | null = null;
   let mediaStream: MediaStream | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -131,6 +137,22 @@ export function useRealtimeTranscription() {
 
   /** Aplica un evento del servidor con semantica replace para parciales. */
   function applyServerEvent(event: ServerEvent) {
+    // Los eventos slide_* no tocan el estado de transcripción: se reenvían.
+    if (
+      event.type === "slide_pending" ||
+      event.type === "slide" ||
+      event.type === "slide_filtered" ||
+      event.type === "slide_kept" ||
+      event.type === "slide_error" ||
+      event.type === "slide_replaced" ||
+      event.type === "slide_removed"
+    ) {
+      if (typeof event.topicVersion === "number" && event.topicVersion > topicVersion.value) {
+        topicVersion.value = event.topicVersion;
+      }
+      options?.onSlideEvent?.(event);
+      return;
+    }
     switch (event.type) {
       case "speechStart": {
         touchTurn(event.turnId);
@@ -202,6 +224,10 @@ export function useRealtimeTranscription() {
       case "error": {
         error.value = event.message;
         status.value = "error";
+        break;
+      }
+      default: {
+        // Eventos futuros o slide_* no esperados aquí: se ignoran sin romper.
         break;
       }
     }
@@ -354,6 +380,12 @@ export function useRealtimeTranscription() {
         onEvent: applyServerEvent,
         onOpen: () => {
           if (status.value === "connecting") status.value = "listening";
+          // Flush config queued while socket was not OPEN (race after start()).
+          if (pendingSessionConfig) {
+            const queued = pendingSessionConfig;
+            pendingSessionConfig = null;
+            client?.sendSessionConfig(queued);
+          }
         },
         onClose: (code) => {
           if (status.value !== "idle" && status.value !== "error") {
@@ -431,6 +463,19 @@ export function useRealtimeTranscription() {
     }
   }
 
+  /** Envía topic/keywords/version/audience al backend por el frame `config`. Queues until OPEN. */
+  function sendSessionConfig(config: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string }) {
+    if (client) {
+      client.sendSessionConfig(config);
+    } else {
+      // No client yet (e.g. topic set before start()): queue for next onopen.
+      pendingSessionConfig = { ...(pendingSessionConfig ?? {}), ...config };
+    }
+    if (typeof config.topicVersion === "number" && config.topicVersion > 0) {
+      topicVersion.value = Math.floor(config.topicVersion);
+    }
+  }
+
   return {
     status,
     error,
@@ -439,12 +484,14 @@ export function useRealtimeTranscription() {
     activeTurnCount,
     finalItems,
     turnMap,
+    topicVersion,
     serverPaused,
     prefilterEnabled,
     prefilterThreshold,
     prefilterLevel,
     setPrefilterEnabled,
     setPrefilterThreshold,
+    sendSessionConfig,
     start,
     stop,
     clearLive,

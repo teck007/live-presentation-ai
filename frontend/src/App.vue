@@ -8,6 +8,7 @@
       :live-active="liveActive"
       :clear-disabled="liveActive || (live.finalItems.value.length === 0 && !live.partialText.value)"
       :presentation-topic="presentationTopic"
+      :presentation-audience="presentationAudience"
       :notice="live.notice.value"
       :error="live.error.value"
       :prefilter-enabled="live.prefilterEnabled.value"
@@ -27,6 +28,7 @@
       @stop-live="handleStopLive"
       @clear-live="handleClearLive"
       @update:topic="presentationTopic = $event; presentation.setTopic($event)"
+      @update:audience="presentationAudience = $event; presentation.setAudience($event)"
       @prefilter-enabled="live.setPrefilterEnabled($event)"
       @prefilter-threshold="live.setPrefilterThreshold($event)"
       @batch-transcribe="handleTranscribe"
@@ -57,6 +59,7 @@
         :live-active="liveActive"
         :clear-disabled="liveActive || (live.finalItems.value.length === 0 && !live.partialText.value)"
         :presentation-topic="presentationTopic"
+        :presentation-audience="presentationAudience"
         :notice="live.notice.value"
         :error="live.error.value"
         :prefilter-enabled="live.prefilterEnabled.value"
@@ -72,13 +75,14 @@
         :result-keywords="resultKeywords"
         :is-empty-warning="isEmptyWarning"
         :api-error="apiError"
-        @start-live="handleStartLive"
-        @stop-live="handleStopLive"
-        @clear-live="handleClearLive"
-        @update:topic="presentationTopic = $event; presentation.setTopic($event)"
-        @prefilter-enabled="live.setPrefilterEnabled($event)"
-        @prefilter-threshold="live.setPrefilterThreshold($event)"
-        @batch-transcribe="handleTranscribe"
+      @start-live="handleStartLive"
+      @stop-live="handleStopLive"
+      @clear-live="handleClearLive"
+      @update:topic="presentationTopic = $event; presentation.setTopic($event)"
+      @update:audience="presentationAudience = $event; presentation.setAudience($event)"
+      @prefilter-enabled="live.setPrefilterEnabled($event)"
+      @prefilter-threshold="live.setPrefilterThreshold($event)"
+      @batch-transcribe="handleTranscribe"
       >
         <template #recorder>
           <AudioRecorder
@@ -154,6 +158,37 @@
             {{ keyword }}
           </span>
         </div>
+
+        <details
+          open
+          class="mx-auto mt-4 w-full max-w-5xl rounded-2xl border border-white/10 bg-white/5 p-4"
+        >
+          <summary class="cursor-pointer text-sm font-semibold text-slate-200">
+            Probar transcripción (sin hablar)
+          </summary>
+          <textarea
+            v-model="testText"
+            rows="3"
+            placeholder="Ej: tiene tres pasos: primero..."
+            class="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-200 placeholder:text-slate-500"
+          ></textarea>
+          <div class="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              :disabled="testText.trim().length < 3 || presentation.pending.value > 0"
+              class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 disabled:opacity-50"
+              @click="presentation.submitTestTranscript(testText)"
+            >
+              Generar slide de prueba
+            </button>
+            <span v-if="presentation.pending.value > 0" class="text-xs text-slate-400">
+              Generando…
+            </span>
+          </div>
+          <p v-if="presentation.error.value" class="mt-2 text-sm text-red-400" role="alert">
+            {{ presentation.error.value }}
+          </p>
+        </details>
       </div>
     </main>
   </div>
@@ -172,25 +207,69 @@ import { useRealtimeTranscription } from "./composables/useRealtimeTranscription
 import type { TranscriptItem } from "./types";
 
 // Sesion de transcripcion en vivo (realtime WS).
-const live = useRealtimeTranscription();
 
 // MVP presentación: topic + cola de turnos finales -> slides JSON.
 const presentationTopic = ref("");
+const presentationAudience = ref("general");
 const presentation = useLivePresentation();
+
+// Caja de prueba siempre visible: genera slides sin hablar.
+const testText = ref("");
+
+// Los eventos slide_* del WS pintan directo; el resto alimenta la transcripción.
+const live = useRealtimeTranscription({
+  onSlideEvent: (event) => presentation.handleSlideEvent(event),
+});
 
 // Mobile drawer state (visual only).
 const sidebarOpen = ref(false);
 
-watch(presentationTopic, (v) => presentation.setTopic(v));
+watch(presentationTopic, (v) => {
+  presentation.setTopic(v);
+  live.sendSessionConfig({
+    topic: v,
+    audience: presentationAudience.value,
+    topicVersion: topicVersion.value,
+    ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
+  });
+});
+
+watch(presentationAudience, (v) => {
+  presentation.setAudience(v);
+  live.sendSessionConfig({
+    topic: presentationTopic.value,
+    audience: v,
+    topicVersion: topicVersion.value,
+    ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
+  });
+});
+
+// Versión de topic vigente: el backend es la autoridad; el frontend la refleja
+// para el pre-paint guard y la envía en el frame `config`.
+const topicVersion = ref(1);
+watch(
+  () => live.topicVersion.value,
+  (v) => presentation.setTopicVersion(v),
+);
+watch(
+  () => presentation.currentTopicVersion.value,
+  (v) => {
+    topicVersion.value = v;
+  },
+);
 
 let seenFinalCount = 0;
 watch(
   () => live.finalItems.value.length,
   () => {
     const items = live.finalItems.value;
-    // finalItems usa unshift: los nuevos están al inicio.
+    // Flag-on: el WS es el único productor; los turnos finales no van al POST.
+    // Flag-off: debounce 4s -> POST /api/presentations/generate (FIFO-1).
+    // Se consume el conteo en ambos modos para no reencolar al cambiar el flag.
     const fresh = items.slice(0, items.length - seenFinalCount);
     seenFinalCount = items.length;
+    if (presentation.wsSlidesEnabled.value) return;
+    // finalItems usa unshift: los nuevos están al inicio.
     for (let i = fresh.length - 1; i >= 0; i--) {
       presentation.queueTranscript(fresh[i]);
     }
@@ -199,7 +278,16 @@ watch(
 
 async function handleStartLive() {
   presentation.setTopic(presentationTopic.value);
+  presentation.setAudience(presentationAudience.value);
+  presentation.setTopicVersion(topicVersion.value);
   await live.start();
+  // Queued until WS OPEN (RealtimeClient + composable flush on onopen): no race if socket still connecting.
+  live.sendSessionConfig({
+    topic: presentationTopic.value,
+    audience: presentationAudience.value,
+    topicVersion: topicVersion.value,
+    ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
+  });
 }
 
 function handleStopLive() {
