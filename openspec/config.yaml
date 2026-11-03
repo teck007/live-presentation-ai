@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  Tech stack: FastAPI backend.presentation_api:app + Vue 3 + Vite + TS + Tailwind 4. Python 3.10+, Node 18+, ffmpeg required.
+  Architecture: WS /ws/transcribe realtime proxy (PCM 24kHz to Meta, enrich_event adds topic/keywords/cleaned); POST /api/transcribe fallback (ffmpeg WAV mono 16-bit 24kHz, 32MB max); POST /api/presentations/generate returns slide JSON.
+  Testing: pytest backend/test_main.py -v; frontend build is vue-tsc --noEmit && vite build.
+  Style: Conventional Commits in Spanish, one work unit per commit. MODEL_API_KEY backend only, never in frontend or VITE_*.
+  Conventions: dedupe realtime transcripts by turnId; 4s debounce before LLM slide call; topic_cleaner extracts topic/keywords/cleaned.
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow existing code patterns
+    tdd: true
+    test_command: "pytest backend/test_main.py -v"
+  verify:
+    test_command: "pytest backend/test_main.py -v"
+    build_command: "cd frontend && npm run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
