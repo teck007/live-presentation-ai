@@ -8,5 +8,17 @@
 <script setup lang="ts">
 // Slide layout: fills the 16:9 stage, content vertically centered.
 // keywords se mantiene en tipos por compat, pero no se muestra en MVP.
-defineProps<{ title: string; text: string; keywords?: string[] }>();
+defineProps<{
+  title: string;
+  text: string;
+  keywords?: string[];
+  kicker?: string;
+  subtitle?: string;
+  cards?: unknown;
+  stats?: unknown;
+  chips?: unknown;
+  steps?: unknown;
+  code?: string;
+  image?: string;
+}>();
 </script>

@@ -18,5 +18,18 @@
 
 <script setup lang="ts">
 // Slide layout: fills the 16:9 stage, content vertically centered.
-defineProps<{ title: string; text: string; keywords?: string[] }>();
+defineProps<{
+  title: string;
+  text: string;
+  keywords?: string[];
+  kicker?: string;
+  subtitle?: string;
+  bullets?: string[];
+  cards?: unknown;
+  stats?: unknown;
+  chips?: unknown;
+  steps?: unknown;
+  code?: string;
+  image?: string;
+}>();
 </script>

@@ -18,15 +18,37 @@
 
     <!-- Single 16:9 stage -->
     <div v-else class="mx-auto w-full max-w-5xl">
-      <div ref="stageRef" class="relative aspect-video w-full overflow-hidden rounded-3xl bg-slate-900 shadow-2xl ring-1 ring-white/10">
+      <div
+        ref="stageRef"
+        class="relative aspect-video w-full overflow-hidden rounded-3xl bg-slate-900 shadow-2xl ring-1 ring-white/10"
+        :style="stagePaletteStyle"
+      >
+        <span
+          class="absolute left-4 top-4 z-10 rounded-full bg-black/60 px-3 py-1 font-mono text-xs text-emerald-300 backdrop-blur"
+        >layout: {{ activeSlide.layout }}</span>
         <Transition name="slide" mode="out-in">
+          <div
+            v-if="activeSlide.html && activeSlide.html.trim()"
+            :key="activeSlide.id + '-html'"
+            class="slide-rendered"
+            v-html="activeSlide.html"
+          ></div>
           <component
+            v-else
             :is="layoutComponent(activeSlide.layout)"
             :key="activeSlide.id"
             :title="activeSlide.title"
             :text="activeSlide.text"
             :bullets="activeSlide.bullets"
             :keywords="activeSlide.keywords"
+            :kicker="activeSlide.kicker"
+            :subtitle="activeSlide.subtitle"
+            :cards="activeSlide.cards"
+            :stats="activeSlide.stats"
+            :chips="activeSlide.chips"
+            :steps="activeSlide.steps"
+            :code="activeSlide.code"
+            :image="activeSlide.image"
           />
         </Transition>
 
@@ -105,6 +127,21 @@ const stageRef = ref<HTMLElement | null>(null);
 const activeSlide = computed(() => props.slides[activeIndex.value] ?? props.slides[props.slides.length - 1]);
 const canPrev = computed(() => activeIndex.value > 0);
 const canNext = computed(() => activeIndex.value < props.slides.length - 1);
+
+// Palette theming for the Vue fallback: map palette roles to CSS vars.
+const stagePaletteStyle = computed<Record<string, string>>(() => {
+  const p = activeSlide.value?.palette as Record<string, string> | undefined;
+  if (!p) return {};
+  const style: Record<string, string> = {};
+  if (p.background) style["--base"] = p.background;
+  if (p.background_alt) style["--base-2"] = p.background_alt;
+  if (p.primary) style["--accent"] = p.primary;
+  if (p.secondary) style["--accent-2"] = p.secondary;
+  if (p.text) style["--text"] = p.text;
+  if (p.text_alt) style["--text-2"] = p.text_alt;
+  if (p.muted) style["--muted"] = p.muted;
+  return style;
+});
 
 function clampIndex() {
   if (!props.slides.length) {
