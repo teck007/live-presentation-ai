@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Local artifacts
 .atl/
+PROPUESTA_CAMBIOS.md
+# Trial MVP store local (primer visto por user_id; sin DB real todavia)
+backend/.trial_first_seen.json
