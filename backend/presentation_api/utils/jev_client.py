@@ -67,8 +67,8 @@ def get_jev_config() -> dict:
         "model": os.getenv("JEV_MODEL", JEV_MODEL_DEFAULT).strip() or JEV_MODEL_DEFAULT,
         "api_key": os.getenv("OPENROUTER_API_KEY", "").strip(),
         "topic_p": _read_float("JEV_TOPIC_P", 0.6, 0.0, 1.0),
-        "action_conf": _read_float("JEV_ACTION_CONF", 0.65, 0.0, 1.0),
-        "new_conf": _read_float("JEV_NEW_CONF", 0.80, 0.0, 1.0),
+        "action_conf": _read_float("JEV_ACTION_CONF", 0.55, 0.0, 1.0),
+        "new_conf": _read_float("JEV_NEW_CONF", 0.68, 0.0, 1.0),
         "timeout_s": timeout_ms / 1000.0,
     }
 
@@ -243,8 +243,8 @@ def _extract_action_scores(slide_action: object) -> tuple[float | None, dict]:
 def parse_decision_payload(
     raw: object,
     topic_p: float = 0.6,
-    action_conf: float = 0.65,
-    new_conf: float = 0.80,
+    action_conf: float = 0.55,
+    new_conf: float = 0.68,
     has_current_slide: bool = False,
 ) -> dict:
     """Parse a Decisions response into {relevant, action, reason, raw, ...}.

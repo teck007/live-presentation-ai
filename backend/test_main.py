@@ -1433,10 +1433,14 @@ def test_jev_parse_invalid_append_choice_fail_open():
 
 
 def test_jev_new_threshold_downgrade():
-    """Weak new (<0.80, >=0.65): keep with base, new without."""
+    """Weak new (<0.68, >=0.55): keep with base, new without; 0.70 paints."""
     from backend.presentation_api.utils import jev_client as jev_mod
 
-    weak_new = _jev_answers("new", 0.70)
+    paints = _jev_answers("new", 0.70)
+    assert jev_mod.parse_decision_payload(paints)["action"] == "new"
+    assert jev_mod.parse_decision_payload(
+        paints, has_current_slide=True)["action"] == "new"
+    weak_new = _jev_answers("new", 0.60)
     assert jev_mod.parse_decision_payload(weak_new)["action"] == "new"
     downgraded = jev_mod.parse_decision_payload(
         weak_new, has_current_slide=True)

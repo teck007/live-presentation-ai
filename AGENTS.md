@@ -28,8 +28,8 @@ cd frontend && npm install && npm run dev
 | `OPENROUTER_API_KEY` | (empty) | Backend only. Gate Jev. Never expose in frontend. |
 | `JEV_MODEL` | `typesafe/jev-1.13` | Backend |
 | `JEV_TOPIC_P` | `0.6` | Backend |
-| `JEV_ACTION_CONF` | `0.65` | Backend |
-| `JEV_NEW_CONF` | `0.80` | Backend |
+| `JEV_ACTION_CONF` | `0.55` | Backend |
+| `JEV_NEW_CONF` | `0.68` | Backend |
 | `JEV_TIMEOUT_MS` | `4000` | Backend |
 | `SLIDE_WINDOW_S` | `10` | Backend |
 | `SLIDE_CONTEXT_CHARS` | `600` | Backend |

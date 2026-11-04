@@ -104,8 +104,8 @@ cd frontend && npm run dev
 | `OPENROUTER_API_KEY` | Backend | (empty) |
 | `JEV_MODEL` | Backend | `typesafe/jev-1.13` |
 | `JEV_TOPIC_P` | Backend | `0.6` |
-| `JEV_ACTION_CONF` | Backend | `0.65` |
-| `JEV_NEW_CONF` | Backend | `0.80` |
+| `JEV_ACTION_CONF` | Backend | `0.55` |
+| `JEV_NEW_CONF` | Backend | `0.68` |
 | `JEV_TIMEOUT_MS` | Backend | `4000` |
 | `SLIDE_WINDOW_S` | Backend | `10` |
 | `WINDOW_DUTY_CYCLE` | Backend | (empty = always on) |
