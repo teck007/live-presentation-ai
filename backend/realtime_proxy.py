@@ -152,37 +152,52 @@ def is_voiced(frame: bytes, threshold: float) -> bool:
     return frame_rms(frame) >= threshold
 
 
-def enrich_event(obj: dict) -> dict:
+def enrich_event(obj: dict, language: str = "es") -> dict:
     """Add cleaned/topic/keywords to final transcript events (additive only)."""
     try:
         # Lazy import: top-level would cycle via backend.presentation_api.__init__
         # (controllers.transcription imports handle_frontend_socket from here).
-        from backend.presentation_api.utils.topic_cleaner import analyze_topic
+        from backend.presentation_api.utils.topic_cleaner import analyze_topic, normalize_language
 
+        lang = normalize_language(language)
         t = obj.get("type")
         if t == "speechComplete":
             raw = obj.get("transcript") or ""
             if isinstance(raw, str) and raw.strip():
-                a = analyze_topic(raw)
+                a = analyze_topic(raw, language=lang)
                 obj = {**obj, "cleaned": a["cleaned"], "topic": a["topic"], "keywords": a["keywords"]}
         elif t == "transcript" and obj.get("final") is True:
             raw = obj.get("transcript") or ""
             if isinstance(raw, str) and raw.strip():
-                a = analyze_topic(raw)
+                a = analyze_topic(raw, language=lang)
                 obj = {**obj, "cleaned": a["cleaned"], "topic": a["topic"], "keywords": a["keywords"]}
     except Exception:  # noqa: BLE001
         pass
     return obj
 
 
-def build_handshake(api_key: str, model: str) -> str:
+LANGUAGE_BIAS = {
+    "es": ["Spanish"],
+    "en": ["English"],
+}
+
+
+def build_handshake(api_key: str, model: str, language: str = "es") -> str:
+    try:
+        from backend.presentation_api.utils.topic_cleaner import normalize_language
+
+        lang = normalize_language(language)
+    except Exception:  # noqa: BLE001
+        lang = "es"
+    if lang not in LANGUAGE_BIAS:
+        lang = "es"
     return json.dumps(
         {
             "authorization": {"accessToken": f"Bearer {api_key}"},
             "audioEncoding": "PCM_24KHZ",
             "model": model,
             "mode": "ENDPOINTING",
-            "languageBias": ["Spanish"],
+            "languageBias": LANGUAGE_BIAS[lang],
             "partialMode": "CUMULATIVE",
             "emitAudioProgress": False,
         }
@@ -241,6 +256,7 @@ class RealtimeBridge:
         self.current_topic = ""
         self.current_keywords: list[str] = []
         self.current_audience = "general"
+        self.current_language = "es"
         self.last_layout: str | None = None
         self.opened_versions: set[int] = set()
         self.presentation_palette: dict | None = None
@@ -253,6 +269,12 @@ class RealtimeBridge:
             self.current_topic = str(entry.get("topic") or "")
             self.current_audience = str(entry.get("audience") or "general") or "general"
             self.current_topic_version = int(entry.get("topic_version") or 1)
+            try:
+                from backend.presentation_api.utils.topic_cleaner import normalize_language as _norm_lang
+
+                self.current_language = _norm_lang(entry.get("language"))
+            except Exception:  # noqa: BLE001 - store never breaks the bridge
+                self.current_language = "es"
             if entry.get("palette") is not None:
                 self.presentation_palette = entry.get("palette")
                 self.presentation_palette_id = entry.get("palette_id")
@@ -541,14 +563,16 @@ class RealtimeBridge:
     def _delta_content_words(delta: str) -> tuple[int, int]:
         """Return (total words, content words) excluding filler words."""
         try:
-            from backend.presentation_api.utils.topic_cleaner import _FILLER_WORDS
+            from backend.presentation_api.utils.topic_cleaner import _FILLER_WORDS, _FILLER_WORDS_EN
+
+            fillers = set(_FILLER_WORDS) | set(_FILLER_WORDS_EN)
         except Exception:  # noqa: BLE001
-            _FILLER_WORDS = frozenset()
+            fillers = frozenset()
         tokens = delta.split()
         content = 0
         for tok in tokens:
             word = tok.lower().strip(".,!?;:…\"'()[]¿¡")
-            if word and word not in _FILLER_WORDS:
+            if word and word not in fillers:
                 content += 1
         return len(tokens), content
 
@@ -815,6 +839,7 @@ class RealtimeBridge:
             "content_type": str(slide.get("content_type") or ""),
             "layout_reason": str(slide.get("layout_reason") or ""),
             "audience": self.current_audience,
+            "language": self.current_language,
             "html": html_snippet,
             "palette_id": self.presentation_palette_id or "",
             "palette": self.presentation_palette,
@@ -896,6 +921,7 @@ class RealtimeBridge:
                     self.last_layout,
                     is_opening,
                     previous_slides,
+                    self.current_language,
                 )
                 try:
                     _latency().record_llm_end(turn_id, time.monotonic())
@@ -963,8 +989,8 @@ class RealtimeBridge:
                     validate_slide,
                 )
 
-                validated = validate_slide(slide if isinstance(slide, dict) else {}, is_opening=is_opening)
-                html_snippet = render_slide_html(validated, self.presentation_palette, is_opening=is_opening)
+                validated = validate_slide(slide if isinstance(slide, dict) else {}, is_opening=is_opening, language=self.current_language)
+                html_snippet = render_slide_html(validated, self.presentation_palette, is_opening=is_opening, language=self.current_language)
                 layout = validated.get("layout") or layout
                 slide = validated
             except Exception:  # noqa: BLE001
@@ -1103,13 +1129,14 @@ class RealtimeBridge:
             pass
 
     def _sync_session_meta(self) -> None:
-        """Mirror bridge topic/audience/palette/version into the store entry."""
+        """Mirror bridge topic/audience/language/palette/version into the store entry."""
         try:
             from backend.presentation_api.utils import live_sessions as _live
 
             entry = _live.get_or_create(self.user_id, self.live_session_id)
             entry["topic"] = self.current_topic
             entry["audience"] = self.current_audience
+            entry["language"] = self.current_language
             entry["palette"] = self.presentation_palette
             entry["palette_id"] = self.presentation_palette_id
             entry["topic_version"] = self.current_topic_version
@@ -1136,6 +1163,14 @@ class RealtimeBridge:
             if existing is not None:
                 self.current_topic = str(existing.get("topic") or "")
                 self.current_audience = str(existing.get("audience") or "general") or "general"
+                try:
+                    from backend.presentation_api.utils.topic_cleaner import (
+                        normalize_language as _norm_lang2,
+                    )
+
+                    self.current_language = _norm_lang2(existing.get("language"))
+                except Exception:  # noqa: BLE001
+                    pass
                 self.current_topic_version = int(existing.get("topic_version") or 1)
                 if existing.get("palette") is not None:
                     self.presentation_palette = existing.get("palette")
@@ -1225,7 +1260,7 @@ class RealtimeBridge:
         try:
             # websockets>=13: extra_headers como dict; handshake dentro de 10s.
             ws = await websockets.connect(url, max_size=4 * 1024 * 1024)
-            await ws.send(build_handshake(api_key, self.config["model"]))
+            await ws.send(build_handshake(api_key, self.config["model"], self.current_language))
         except WebSocketException as exc:
             logger.warning("No se pudo abrir upstream realtime: %s", exc)
             await self.send_front(
@@ -1252,6 +1287,33 @@ class RealtimeBridge:
         self._start_relay()
         return True
 
+    async def _reopen_upstream_for_language(self) -> None:
+        """Re-handshake the upstream session so a new languageBias applies.
+
+        ASR languageBias is fixed at handshake time: a config frame alone
+        cannot change it. When the UI locale switches mid-session, close the
+        current upstream session and open a new one with the updated bias.
+        The frontend socket stays open; only the Meta session restarts.
+        No-op while paused (next open_upstream already uses the new bias).
+        """
+        if not self.streaming or self.upstream is None:
+            return
+        old = self.upstream
+        self.upstream = None
+        self.streaming = False
+        try:
+            await old.send(json.dumps({"type": "endStream"}))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await old.close(code=1000)
+        except Exception:  # noqa: BLE001
+            pass
+        if self.relay_task and not self.relay_task.done():
+            self.relay_task.cancel()
+        if not self.closed:
+            await self.open_upstream()
+
     def _start_relay(self) -> None:
         if self.relay_task and not self.relay_task.done():
             return
@@ -1267,7 +1329,7 @@ class RealtimeBridge:
                 if isinstance(message, bytes):
                     continue  # eventos son JSON text; ignora binarios
                 try:
-                    enriched = enrich_event(json.loads(message))
+                    enriched = enrich_event(json.loads(message), self.current_language)
                     self._note_meta_event(enriched)
                     await self.send_front(enriched)
                 except Exception:  # noqa: BLE001
@@ -1330,7 +1392,7 @@ class RealtimeBridge:
                         if isinstance(message, bytes):
                             continue
                         try:
-                            enriched = enrich_event(json.loads(message))
+                            enriched = enrich_event(json.loads(message), self.current_language)
                             self._note_meta_event(enriched)
                             await self.send_front(enriched)
                         except Exception:  # noqa: BLE001
@@ -1510,6 +1572,24 @@ class RealtimeBridge:
 
                                     if cand in VALID_AUDIENCES:
                                         self.current_audience = cand
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            if "language" in obj and isinstance(obj["language"], str):
+                                try:
+                                    from backend.presentation_api.utils.topic_cleaner import (
+                                        VALID_LANGUAGES,
+                                        normalize_language,
+                                    )
+
+                                    cand_lang = obj["language"].strip().lower()
+                                    if cand_lang in VALID_LANGUAGES:
+                                        new_lang = normalize_language(cand_lang)
+                                        if new_lang != self.current_language:
+                                            self.current_language = new_lang
+                                            # ASR languageBias is set at handshake:
+                                            # reopen the upstream session so the
+                                            # new bias takes effect mid-session.
+                                            await self._reopen_upstream_for_language()
                                 except Exception:  # noqa: BLE001
                                     pass
                             if "palette_id" in obj and isinstance(obj["palette_id"], str):

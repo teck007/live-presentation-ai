@@ -61,6 +61,7 @@ def _blank_entry(user_id: str, live_session_id: str) -> dict:
         "transcript_history": [],
         "topic": "",
         "audience": "general",
+        "language": "es",
         "palette": None,
         "palette_id": None,
         "topic_version": 1,

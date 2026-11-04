@@ -87,6 +87,20 @@ def normalize_audience(value: object) -> str:
     v = str(value or "").strip().lower()
     return v if v in VALID_AUDIENCES else "general"
 
+
+VALID_LANGUAGES = ("es", "en")
+
+LANGUAGE_NAMES = {
+    "es": "Spanish (espanol)",
+    "en": "English",
+}
+
+
+def normalize_language(value: object) -> str:
+    """Normalize UI locale id; unknown or empty falls back to Spanish."""
+    v = str(value or "").strip().lower()
+    return v if v in VALID_LANGUAGES else "es"
+
 SLIDE_SYSTEM_PROMPT = (
     "Generas contenido para una presentacion en vivo. "
     "Responde SOLO con JSON valido, sin markdown ni texto extra. "
@@ -192,20 +206,62 @@ SLIDE_SYSTEM_PROMPT = (
 )
 
 
-def _fallback_slide(transcript: str, keywords: list[str] | None, topic: str = "") -> dict:
+def build_system_prompt(language: str = "es") -> str:
+    """Return the slide system prompt for the requested output language.
+
+    Spanish is the canonical prompt (SLIDE_SYSTEM_PROMPT). English reuses the
+    same contract with the text fields mandated in English; image tags stay
+    in English in both variants.
+    """
+    lang = normalize_language(language)
+    if lang == "es":
+        return SLIDE_SYSTEM_PROMPT
+    prompt = SLIDE_SYSTEM_PROMPT
+    replacements = (
+        ("titulo en espanol", "titulo in English"),
+        ("texto en espanol", "texto in English"),
+        ("titulo\" en espanol", "titulo\" in English"),
+        ("Solo espanol (salvo imagen_hashtag en ingles)",
+         "English only (imagen_hashtag stays in English)"),
+        ("Solo espanol", "English only"),
+    )
+    for old, new in replacements:
+        prompt = prompt.replace(old, new)
+    prefix = (
+        "Output language: English. Every human-readable slide field "
+        "(titulo/title, texto/text, listado/bullets, conceptos/cards, "
+        "concept, explanation, example, takeaway, kicker, subtitle, chips, "
+        "steps, stats labels) MUST be in English. "
+        "imagen_hashtag and imagen_prompt stay in English. "
+    )
+    return prefix + prompt
+
+
+def _fallback_slide(
+    transcript: str,
+    keywords: list[str] | None,
+    topic: str = "",
+    language: str = "es",
+) -> dict:
     """Slide mínimo cuando el LLM falla o devuelve JSON inválido."""
     from backend.presentation_api.utils.topic_cleaner import is_relevant
 
+    lang = normalize_language(language)
     text = (transcript or "").strip()
     words = text.split()
     short = " ".join(words[:30]) if len(words) > 30 else text
     # Respaldo barato: si el LLM falló, usa el filtro literal para no generar basura.
-    relevant = is_relevant(text, topic or "", list(keywords or []))
-    title = " ".join(words[:8]) if words else "En vivo"
+    relevant = is_relevant(text, topic or "", list(keywords or []), language=lang)
+    if lang == "en":
+        title = " ".join(words[:8]) if words else "Live"
+        body = short or "Live content."
+    else:
+        title = " ".join(words[:8]) if words else "En vivo"
+        body = short or "Contenido en vivo."
     return {
         "layout": "title_text",
         "title": title,
-        "text": short or "Contenido en vivo.",
+        "text": body,
         "bullets": [],
         "keywords": list(keywords or [])[:5],
         "kicker": "",
@@ -230,7 +286,7 @@ def _fallback_slide(transcript: str, keywords: list[str] | None, topic: str = ""
         "relevant": relevant,
         "filtered": not relevant,
         "titulo": title,
-        "texto": short or "Contenido en vivo.",
+        "texto": body,
         "listado": [],
         "conceptos": [],
     }
@@ -260,6 +316,7 @@ def generate_slide(
     previous_layout: str | None = None,
     is_opening: bool = False,
     previous_slides: list | None = None,
+    language: str = "es",
 ) -> dict:
     """Generate slide content as plain JSON (no HTML).
 
@@ -268,6 +325,7 @@ def generate_slide(
     """
     kws = list(keywords or [])[:5]
     audience = normalize_audience(audience)
+    language = normalize_language(language)
     previous_layout = str(previous_layout or "").strip() or ""
     start = time.perf_counter()
     try:
@@ -276,6 +334,7 @@ def generate_slide(
             f"Tema principal: {topic.strip() or '(sin definir)'}\n"
             f"Keywords: {', '.join(kws) if kws else '(ninguna)'}\n"
             f"Audiencia: {audience} — {AUDIENCE_GUIDANCE[audience]}\n"
+            f"Idioma de salida: {LANGUAGE_NAMES[language]}\n"
             f"Layout anterior: {previous_layout or '(ninguno)'}\n"
             f"Es apertura: {'si' if is_opening else 'no'} — hero_cover solo permitido si si\n"
             f"Slides previas (NO repitas titulo ni idea dominante ya cubierta):\n{prev_ctx}\n"
@@ -285,7 +344,7 @@ def generate_slide(
         response = client.chat.completions.create(
             model="muse-spark-1.3",
             messages=[
-                {"role": "system", "content": SLIDE_SYSTEM_PROMPT},
+                {"role": "system", "content": build_system_prompt(language)},
                 {"role": "user", "content": user_content},
             ],
             # TODO(measured): temperature 0.7 stays until latency/quality data says otherwise.
@@ -301,10 +360,10 @@ def generate_slide(
             data = json.loads(raw)
         except Exception as exc:  # noqa: BLE001
             print(f"[llm] muse-spark fallback reason={str(exc)[:120]!r}", flush=True)
-            return _fallback_slide(transcript, kws, topic)
+            return _fallback_slide(transcript, kws, topic, language)
         if not isinstance(data, dict):
             print("[llm] muse-spark fallback reason='invalid-json'", flush=True)
-            return _fallback_slide(transcript, kws, topic)
+            return _fallback_slide(transcript, kws, topic, language)
         # El modelo decide en esta misma respuesta si corresponde al tema principal.
         relevant = data.get("relevant", True)
         relevant = False if relevant is False else True
@@ -353,7 +412,7 @@ def generate_slide(
         # Caps mirror validate_slide budgets (large editorial type).
         title = (
             str(data.get("titulo") or data.get("title") or "").strip()[:100]
-            or "En vivo"
+            or ("Live" if language == "en" else "En vivo")
         )
         text = (
             str(data.get("texto") or data.get("text") or "").strip()[:400]
@@ -397,9 +456,11 @@ def generate_slide(
                 "filtered": False,
             },
             is_opening=is_opening,
+            language=language,
         )
         print(
             f"[llm] muse-spark layout={validated.get('layout')} audience={audience} "
+            f"language={language} "
             f"reason={str(validated.get('layout_reason') or '')[:60]!r} "
             f"cards={len(validated.get('cards') or [])} "
             f"stats={len(validated.get('stats') or [])} "
@@ -412,7 +473,7 @@ def generate_slide(
         return validated
     except Exception as exc:  # noqa: BLE001 - MVP: fallback, no rompe el vivo
         print(f"[llm] muse-spark fallback reason={str(exc)[:120]!r}", flush=True)
-        return _fallback_slide(transcript, kws, topic)
+        return _fallback_slide(transcript, kws, topic, language)
 
 
 def analyze_text(text: str) -> str:

@@ -710,6 +710,51 @@ def test_rest_respects_is_opening_flag(monkeypatch):
         assert r_omit.json()["layout"] in ("split_media", "title_text")
 
 
+def test_rest_respects_language(monkeypatch):
+    """REST: language drives generate_slide kwarg; default es, unknown -> es."""
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.controllers import presentation as pres_mod
+
+    client = TestClient(app_mod)
+    seen: list[dict] = []
+
+    def fake_generate(transcript, topic, keywords=None, *args, **kwargs):
+        seen.append({"args": args, "kwargs": dict(kwargs)})
+        return {"layout": "title_text", "title": "T", "text": "x",
+                "bullets": [], "keywords": [], "relevant": True, "filtered": False}
+
+    def language_of(call: dict) -> str:
+        args = call["args"]
+        # Positional layout: (audience, previous_layout, is_opening,
+        # previous_slides, language).
+        if len(args) >= 5:
+            return str(args[4])
+        return str(call["kwargs"].get("language", "MISSING"))
+
+    with patch.object(pres_mod, "generate_slide", side_effect=fake_generate):
+        r_en = client.post("/api/presentations/generate", json={
+            "transcript": "photosynthesis converts light into energy", "topic": "photosynthesis",
+            "keywords": ["photosynthesis"], "language": "en",
+        })
+        assert r_en.status_code == 200, r_en.text
+        assert language_of(seen[-1]) == "en"
+        r_default = client.post("/api/presentations/generate", json={
+            "transcript": "la fotosintesis convierte luz", "topic": "fotosintesis",
+            "keywords": ["fotosintesis"],
+        })
+        assert r_default.status_code == 200, r_default.text
+        assert language_of(seen[-1]) == "es"
+        r_bad = client.post("/api/presentations/generate", json={
+            "transcript": "la fotosintesis convierte luz", "topic": "fotosintesis",
+            "keywords": ["fotosintesis"], "language": "fr",
+        })
+        assert r_bad.status_code == 200, r_bad.text
+        assert language_of(seen[-1]) == "es"
+
+
 # --- JEV gate: keep/update/new + fail-open + slide_kept + windows ---
 
 def _make_bridge_win(window_s: float = 0.16):

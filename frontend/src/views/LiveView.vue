@@ -283,6 +283,7 @@ import {
 } from "../api/presentation";
 import type { LiveSessionStatus } from "../types";
 import { useLivePresentation } from "../composables/useLivePresentation";
+import { useLanguage } from "../composables/useLanguage";
 import { useRecorder } from "../composables/useRecorder";
 import { useRealtimeTranscription } from "../composables/useRealtimeTranscription";
 import { getAuth } from "../lib/clerk";
@@ -315,11 +316,13 @@ function goSignIn(): void {
 // MVP presentation: topic + final-turn queue -> JSON slides.
 const presentationTopic = ref("");
 const presentationAudience = ref("general");
+const { locale } = useLanguage();
 const presentation = useLivePresentation({
   getToken,
   onTrialExpired: goTrialExpired,
   onUnauthorized: goSignIn,
 });
+presentation.setLanguage(locale.value);
 
 // Dev-only test box: generates slides without speaking.
 const testText = ref("");
@@ -349,6 +352,7 @@ watch(presentationTopic, (v) => {
   live.sendSessionConfig({
     topic: v,
     audience: presentationAudience.value,
+    language: locale.value,
     topicVersion: topicVersion.value,
     ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
   });
@@ -359,6 +363,21 @@ watch(presentationAudience, (v) => {
   live.sendSessionConfig({
     topic: presentationTopic.value,
     audience: v,
+    language: locale.value,
+    topicVersion: topicVersion.value,
+    ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
+  });
+});
+
+// UI locale drives slide language from the next slide forward.
+// No re-translation of already-painted slides; ASR bias re-handshakes
+// upstream (backend) so the new bias takes effect mid-session.
+watch(locale, (v) => {
+  presentation.setLanguage(v);
+  live.sendSessionConfig({
+    topic: presentationTopic.value,
+    audience: presentationAudience.value,
+    language: v,
     topicVersion: topicVersion.value,
     ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
   });
@@ -440,6 +459,7 @@ async function handleStartLive() {
   }
   presentation.setTopic(presentationTopic.value);
   presentation.setAudience(presentationAudience.value);
+  presentation.setLanguage(locale.value);
   presentation.setTopicVersion(topicVersion.value);
   // Resume check BEFORE mic: saved session -> dialog; none/error -> direct.
   try {
@@ -458,6 +478,7 @@ async function handleStartLive() {
 async function doStartLive(resume: boolean) {
   presentation.setTopic(presentationTopic.value);
   presentation.setAudience(presentationAudience.value);
+  presentation.setLanguage(locale.value);
   presentation.setTopicVersion(topicVersion.value);
   // Portada automática: arranque fresco + tema + canvas vacío. No bloquea el
   // mic (seq 0 queda primera aunque el WS pinte después). Continuar no genera.
@@ -469,6 +490,7 @@ async function doStartLive(resume: boolean) {
   live.sendSessionConfig({
     topic: presentationTopic.value,
     audience: presentationAudience.value,
+    language: locale.value,
     topicVersion: topicVersion.value,
     ...(presentation.paletteId.value ? { palette_id: presentation.paletteId.value } : {}),
     liveSessionId: presentation.getLiveSessionId(),
@@ -523,6 +545,10 @@ async function continueResume() {
         if (first?.audience) {
           presentationAudience.value = first.audience;
           presentation.setAudience(first.audience);
+        }
+        const firstLang = (first as { language?: unknown }).language;
+        if (firstLang === "es" || firstLang === "en") {
+          presentation.setLanguage(firstLang);
         }
         if (typeof first?.palette_id === "string" && first.palette_id) {
           presentation.setPaletteId(first.palette_id);
@@ -711,7 +737,7 @@ async function handleTranscribe() {
   apiError.value = null;
   try {
     const filename = `grabacion.${suggestedExtension()}`;
-    const data = await transcribeAudio(blob.value, filename, getToken);
+    const data = await transcribeAudio(blob.value, filename, getToken, locale.value);
     const raw = data.text.trim();
     const cleaned = (data.cleaned ?? data.topic ?? "").trim();
     const topic = (data.topic ?? "").trim();

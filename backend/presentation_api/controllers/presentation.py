@@ -8,9 +8,11 @@ from backend.presentation_api.utils.auth import require_auth
 
 from backend.presentation_api.utils.image_generation import generate_image
 from backend.presentation_api.utils.llm_client import (
+    VALID_LANGUAGES,
     VALID_LAYOUTS,
     generate_slide,
     normalize_audience,
+    normalize_language,
 )
 from backend.presentation_api.utils.palettes import resolve_palette
 from backend.presentation_api.utils.slide_designs import (
@@ -31,6 +33,7 @@ class GenerateSlideRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=10)
     palette_id: str | None = None
     audience: str | None = None
+    language: str | None = None
     is_opening: bool | None = None
 
 
@@ -138,6 +141,9 @@ def live_session_slides(live_session_id: str, user: dict = Depends(require_auth)
     if not palette_id and isinstance(palette, dict):
         palette_id = str(palette.get("id") or "")
     audience = str(entry.get("audience") or "general") or "general"
+    language = str(entry.get("language") or "es") or "es"
+    if language not in ("es", "en"):
+        language = "es"
     topic = str(entry.get("topic") or "")
 
     def _str_list(value: object, limit: int = 4) -> list:
@@ -206,6 +212,7 @@ def live_session_slides(live_session_id: str, user: dict = Depends(require_auth)
             "content_type": str(raw.get("content_type") or ""),
             "layout_reason": str(raw.get("layout_reason") or ""),
             "audience": audience,
+            "language": str(raw.get("language") or language),
             "html": html,
             "palette_id": palette_id,
             "palette": palette,
@@ -256,11 +263,12 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
     palette = resolve_palette(req.palette_id)
     palette_id = str(palette.get("id", "") or "")
 
+    audience = normalize_audience(req.audience)
+    language = normalize_language(req.language)
+
     # Si no hay keywords, derivarlas del transcript para el LLM.
     if not keywords:
-        keywords = analyze_topic(transcript).get("keywords", [])
-
-    audience = normalize_audience(req.audience)
+        keywords = analyze_topic(transcript, language=language).get("keywords", [])
 
     # El LLM decide en esta misma respuesta si corresponde al tema principal.
     # Non-blocking: sync OpenAI client runs in a worker thread (same as WS path),
@@ -268,8 +276,11 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
     # bounds the call; elapsed is logged by generate_slide itself.
     is_open = bool(req.is_opening)
     slide = await asyncio.to_thread(
-        generate_slide, transcript, topic, keywords, audience, None, is_open
+        generate_slide, transcript, topic, keywords, audience, None, is_open,
+        None, language,
     )
+    # NOTE: previous_slides stays None positionally; language is last so
+    # existing positional callers (tests/WS) are unaffected.
     if slide.get("filtered") is True or slide.get("relevant") is False:
         return GenerateSlideResponse(
             layout="title_text",
@@ -282,9 +293,9 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
             palette_id=palette_id,
             palette=palette,
         )
-    v = validate_slide(slide, is_opening=is_open)
+    v = validate_slide(slide, is_opening=is_open, language=language)
     layout = v.get("layout") if v.get("layout") in VALID_LAYOUTS else "title_text"
-    html_snippet = render_slide_html(v, palette, is_opening=is_open)
+    html_snippet = render_slide_html(v, palette, is_opening=is_open, language=language)
     # Vivo efímero: si corresponde imagen, intento corto fail-open y re-render.
     # REST returns the text slide fast: short outer timeout (<10s, inner is 25s)
     # so the response never blocks on image generation. WS stays progressive
@@ -297,13 +308,13 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
             url = await asyncio.wait_for(generate_image(fast_prompt), timeout=8.0)
             if url:
                 v["image"] = url
-                html_snippet = render_slide_html(v, palette, is_opening=is_open)
+                html_snippet = render_slide_html(v, palette, is_opening=is_open, language=language)
         except Exception:  # noqa: BLE001 - placeholder inmediato si falla
             pass
     cm = v.get("codigo_matematica") if isinstance(v.get("codigo_matematica"), dict) else None
     return GenerateSlideResponse(
         layout=layout,
-        title=str(v.get("title") or "En vivo")[:120],
+        title=str(v.get("title") or ("Live" if language == "en" else "En vivo"))[:120],
         text=str(v.get("text") or "")[:900],
         bullets=[b for b in list(v.get("bullets") or []) if isinstance(b, str)][:4],
         keywords=[str(k) for k in list(v.get("keywords") or keywords)][:5],

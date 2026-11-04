@@ -7,9 +7,9 @@ import subprocess
 import tempfile
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket
 from backend.presentation_api.utils.auth import extract_ws_token, get_current_user, require_auth
-from backend.presentation_api.utils.topic_cleaner import analyze_topic, clean_topic
+from backend.presentation_api.utils.topic_cleaner import analyze_topic, clean_topic, normalize_language
 
 from backend.realtime_proxy import handle_frontend_socket
 
@@ -118,7 +118,11 @@ def extract_text(payload: dict) -> str:
 
 
 @router.post("/api/transcribe")
-async def transcribe(file: UploadFile = File(...), user: dict = Depends(require_auth)):
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+    user: dict = Depends(require_auth),
+):
     from backend.presentation_api.utils.trial import is_trial_active
 
     if not is_trial_active(user):
@@ -145,11 +149,13 @@ async def transcribe(file: UploadFile = File(...), user: dict = Depends(require_
     # Conversión ffmpeg (subprocess) en worker thread para no bloquear el event loop.
     wav_bytes = await asyncio.to_thread(convert_audio_bytes, raw)
 
+    lang = normalize_language(language)
+    language_bias = ["English"] if lang == "en" else ["Spanish"]
     request_part = {
         "model": get_asr_model(),
         "audioEncoding": "WAV",
         "mode": "PUSH_TO_TALK",
-        "languageBias": ["Spanish"],
+        "languageBias": language_bias,
     }
 
     files = {
@@ -189,7 +195,7 @@ async def transcribe(file: UploadFile = File(...), user: dict = Depends(require_
         raise HTTPException(status_code=502, detail="Meta ASR devolvio una respuesta no JSON.")
 
     raw_text = extract_text(payload)
-    analysis = analyze_topic(raw_text)
+    analysis = analyze_topic(raw_text, language=lang)
     return {
         "text": raw_text,
         "topic": analysis["topic"],

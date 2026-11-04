@@ -69,6 +69,12 @@ _GREETINGS = re.compile(
     re.IGNORECASE,
 )
 
+# English leading greetings (mirrors _GREETINGS, applied when language="en").
+_GREETINGS_EN = re.compile(
+    r"^\s*(?:hello|hi|hey|good\s+morning|good\s+afternoon|good\s+evening)\b[\s,!.?]*",
+    re.IGNORECASE,
+)
+
 # "quiero hablar sobre/de..." ("eh bueno quiero hablar sobre el cambio...").
 _HABLAR_SOBRE = re.compile(
     r"^\s*(?:quiero|quisiera|necesito)\s+"
@@ -93,12 +99,38 @@ _FILLERS = [
     "pues",
 ]
 
+# English voice fillers (mirrors _FILLERS, applied when language="en").
+_FILLERS_EN = [
+    "well you know",
+    "you know",
+    "i mean",
+    "let me see",
+    "uh",
+    "um",
+    "hmm",
+    "like",
+    "well",
+    "so",
+    "actually",
+    "basically",
+    "right",
+]
+
 # Palabras individuales que forman las muletillas (para filtrado de keywords).
 _FILLER_WORDS = frozenset(w for phrase in _FILLERS for w in phrase.split())
+
+# English filler words (mirrors _FILLER_WORDS, applied when language="en").
+_FILLER_WORDS_EN = frozenset(w for phrase in _FILLERS_EN for w in phrase.split())
 
 # Regex de muletillas (frases largas primero) con límites de palabra.
 _FILLER_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(p) for p in sorted(_FILLERS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+# English filler regex (mirrors _FILLER_RE, applied when language="en").
+_FILLER_RE_EN = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in sorted(_FILLERS_EN, key=len, reverse=True)) + r")\b",
     re.IGNORECASE,
 )
 
@@ -121,14 +153,62 @@ _STOPWORDS_ES = frozenset(
     }
 )
 
+# Minimal English stopwords for keyword extraction (mirrors _STOPWORDS_ES).
+_STOPWORDS_EN = frozenset(
+    {
+        "and", "or", "but", "because", "so", "that", "of", "the", "a",
+        "an", "in", "with", "for", "to", "its", "his", "her", "my",
+        "your", "is", "are", "was", "were", "there", "this", "that",
+        "these", "those", "here", "very", "also", "then", "when",
+        "where", "how", "what", "which", "i", "you", "he", "she",
+        "we", "they", "me", "us", "him", "them", "at", "on", "by",
+        "from", "as", "be", "been", "have", "has", "had", "do",
+        "does", "did", "will", "would", "can", "could", "should",
+        "presentation",
+    }
+)
+
+VALID_LANGUAGES = ("es", "en")
+
+
+def normalize_language(value: object) -> str:
+    """Normalize UI locale id; unknown or empty falls back to Spanish."""
+    v = str(value or "").strip().lower()
+    return v if v in VALID_LANGUAGES else "es"
+
+
 _TOKEN_RE = re.compile(r"[a-záéíóúñü]+")
 
+# English token regex (ASCII only; no accented vowels).
+_TOKEN_RE_EN = re.compile(r"[a-z]+")
 
-def _remove_fillers(text: str) -> str:
+
+def _filler_re_for(language: str):
+    return _FILLER_RE_EN if normalize_language(language) == "en" else _FILLER_RE
+
+
+def _filler_words_for(language: str) -> frozenset:
+    return _FILLER_WORDS_EN if normalize_language(language) == "en" else _FILLER_WORDS
+
+
+def _stopwords_for(language: str) -> frozenset:
+    return _STOPWORDS_EN if normalize_language(language) == "en" else _STOPWORDS_ES
+
+
+def _token_re_for(language: str):
+    return _TOKEN_RE_EN if normalize_language(language) == "en" else _TOKEN_RE
+
+
+def _greetings_re_for(language: str):
+    return _GREETINGS_EN if normalize_language(language) == "en" else _GREETINGS
+
+
+def _remove_fillers(text: str, language: str = "es") -> str:
     """Remove voice fillers anywhere, collapse repeated words, normalize spaces."""
     if not text:
         return ""
-    text = _FILLER_RE.sub(" ", text)
+    filler_re = _filler_re_for(language)
+    text = filler_re.sub(" ", text)
     prev = None
     while prev != text:
         prev = text
@@ -137,16 +217,17 @@ def _remove_fillers(text: str) -> str:
     return text
 
 
-def _strip_greetings(text: str) -> str:
+def _strip_greetings(text: str, language: str = "es") -> str:
     """Remove leading greetings, keeping them when they are the content.
 
     "hola mundo" stays as-is (greeting + single word is likely the topic).
     Only strips when the remainder has >= 2 words and len >= 3.
     """
+    greetings_re = _greetings_re_for(language)
     prev = None
     while prev != text:
         prev = text
-        m = _GREETINGS.match(text)
+        m = greetings_re.match(text)
         if not m:
             break
         remainder = text[m.end():].strip()
@@ -156,15 +237,19 @@ def _strip_greetings(text: str) -> str:
     return text
 
 
-def clean_topic(raw: str) -> str:
+def clean_topic(raw: str, language: str = "es") -> str:
     """Extrae el tema real de un texto libre del usuario (best-effort).
 
     Devuelve el tema limpio; si la limpieza lo deja vacío o irreconocible,
     devuelve el texto original recortado.
     """
+    lang = normalize_language(language)
     if not raw:
         return ""
     text = raw.strip()
+
+    if lang == "en":
+        return _clean_topic_en(text)
 
     # Saludos y muletillas ANTES de los prefijos: "hola quiero..." o
     # "eh bueno quiero hablar sobre..." exponen el prefijo al limpiarlos.
@@ -209,19 +294,84 @@ def clean_topic(raw: str) -> str:
     return text
 
 
-def extract_keywords(text: str, top_n: int = 5) -> list[str]:
+# English instruction/polite prefixes stripped from the start of the text
+# (mirrors _LEADING_META, applied when language="en").
+_LEADING_META_EN = re.compile(
+    r"^\s*(?:"
+    r"(?:can\s+you|could\s+you|would\s+you|please)\s+"
+    r"(?:make|create|build|generate|develop|prepare|explain|tell|show|teach|summarize|summarise|give|help)\s+"
+    r"(?:a|an|the\s+)?\s*(?:presentation\s+)?"
+    r"|"
+    r"(?:i\s+want|i\s+need|i['’]d\s+like|i\s+would\s+like)\s+"
+    r"(?:to\s+know\s+|to\s+learn\s+|a\s+)?"
+    r"|"
+    r"(?:give\s+me|show\s+me|tell\s+me)\s+(?:ideas|information|examples?)?\s*"
+    r"|"
+    r"(?:make|create|build|generate|develop|prepare|explain|tell|show|teach|summarize|summarise|give)\s+"
+    r"(?:a|an|the\s+)?\s*(?:presentation\s+)?"
+    r"|"
+    r"(?:what\s+is|what\s+are|what\s+was|what\s+were|how\s+does|how\s+do|how\s+to)\s+"
+    r"|"
+    r"please\s+"
+    r")"
+    r"(?:about|on|of|for|regarding|concerning)?\s*",
+    re.IGNORECASE,
+)
+
+# "to + infinitive" leftovers ("to develop...") or articles.
+_PARA_RESTOS_EN = re.compile(
+    r"^\s*to\s+(?:\w{2,}(?:e|ing|ed)?\b|(?:a|an|the))\s*"
+)
+
+_ARTICULO_EN = re.compile(r"^\s*(?:a|an|the)\s+")
+
+
+def _clean_topic_en(text: str) -> str:
+    """English topic cleanup (mirrors the Spanish cascade, best-effort)."""
+    raw = text
+    for _ in range(5):
+        prev_outer = text
+        text = _strip_greetings(text, "en").strip()
+        text = _remove_fillers(text, "en").strip()
+        prev = None
+        while prev != text:
+            prev = text
+            text = _LEADING_META_EN.sub("", text).strip()
+        if text == prev_outer:
+            break
+    text = _PARA_RESTOS_EN.sub("", text).strip()
+    text = _ARTICULO_EN.sub("", text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = _remove_fillers(text, "en").strip()
+    text = _ARTICULO_EN.sub("", text).strip()
+    text = _strip_greetings(text, "en").strip()
+    prev = None
+    while prev != text:
+        prev = text
+        text = _LEADING_META_EN.sub("", text).strip()
+    text = _ARTICULO_EN.sub("", text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    if len(text) < 3:
+        return raw.strip()
+    return text
+
+
+def extract_keywords(text: str, top_n: int = 5, language: str = "es") -> list[str]:
     """Extract top keywords by frequency, skipping stopwords and fillers."""
     if not text:
         return []
-    tokens = _TOKEN_RE.findall(text.lower())
+    lang = normalize_language(language)
+    tokens = _token_re_for(lang).findall(text.lower())
+    stopwords = _stopwords_for(lang)
+    filler_words = _filler_words_for(lang)
     freq: dict[str, int] = {}
     first_index: dict[str, int] = {}
     for i, token in enumerate(tokens):
         if len(token) < 3:
             continue
-        if token in _STOPWORDS_ES:
+        if token in stopwords:
             continue
-        if token in _FILLER_WORDS:
+        if token in filler_words:
             continue
         if token not in freq:
             freq[token] = 0
@@ -231,28 +381,32 @@ def extract_keywords(text: str, top_n: int = 5) -> list[str]:
     return ranked[:top_n]
 
 
-def analyze_topic(raw: str, top_n: int = 5) -> dict:
+def analyze_topic(raw: str, top_n: int = 5, language: str = "es") -> dict:
     """Clean raw text and extract topic keywords (best-effort)."""
-    cleaned = clean_topic(raw or "")
+    lang = normalize_language(language)
+    cleaned = clean_topic(raw or "", language=lang)
     if not cleaned:
         return {"topic": "", "keywords": [], "cleaned": ""}
-    keywords = extract_keywords(cleaned, top_n)
+    keywords = extract_keywords(cleaned, top_n, language=lang)
     words = cleaned.split()
     topic = " ".join(words[:8]) if len(words) > 8 else cleaned
     return {"topic": topic, "keywords": keywords, "cleaned": cleaned}
 
 
-def _content_tokens(text: str) -> set[str]:
+def _content_tokens(text: str, language: str = "es") -> set[str]:
     """Tokenize to content words (lowercased, no stopwords/fillers, len>=3)."""
-    tokens = _TOKEN_RE.findall((text or "").lower())
+    lang = normalize_language(language)
+    tokens = _token_re_for(lang).findall((text or "").lower())
+    stopwords = _stopwords_for(lang)
+    filler_words = _filler_words_for(lang)
     return {
         t
         for t in tokens
-        if len(t) >= 3 and t not in _STOPWORDS_ES and t not in _FILLER_WORDS
+        if len(t) >= 3 and t not in stopwords and t not in filler_words
     }
 
 
-def is_relevant(transcript: str, topic: str, keywords: list[str] | None = None) -> bool:
+def is_relevant(transcript: str, topic: str, keywords: list[str] | None = None, language: str = "es") -> bool:
     """Decide si un transcript pertenece al tema principal (laxo, best-effort).
 
     - Sin topic definido -> True (sin filtro).
@@ -260,6 +414,7 @@ def is_relevant(transcript: str, topic: str, keywords: list[str] | None = None) 
     - True si hay overlap de >=1 token de contenido entre transcript y
       (topic + keywords), o si el topic limpio aparece como subcadena.
     """
+    lang = normalize_language(language)
     thesis = (topic or "").strip()
     if not thesis:
         return True
@@ -267,18 +422,18 @@ def is_relevant(transcript: str, topic: str, keywords: list[str] | None = None) 
     if not raw:
         return False
 
-    cleaned_transcript = clean_topic(raw).lower()
-    cleaned_topic = clean_topic(thesis).lower()
+    cleaned_transcript = clean_topic(raw, language=lang).lower()
+    cleaned_topic = clean_topic(thesis, language=lang).lower()
     if cleaned_topic and cleaned_topic in cleaned_transcript:
         return True
 
-    topic_tokens = _content_tokens(thesis)
+    topic_tokens = _content_tokens(thesis, language=lang)
     for kw in keywords or []:
-        topic_tokens |= _content_tokens(kw)
+        topic_tokens |= _content_tokens(kw, language=lang)
     if not topic_tokens:
         return True
 
-    transcript_tokens = _content_tokens(raw)
+    transcript_tokens = _content_tokens(raw, language=lang)
     if not transcript_tokens:
         return False
     return len(topic_tokens & transcript_tokens) > 0

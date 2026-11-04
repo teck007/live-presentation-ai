@@ -70,7 +70,7 @@ export function useRealtimeTranscription(options?: {
   let lastActiveTurnId: string | null = null;
 
   let client: RealtimeClient | null = null;
-  let pendingSessionConfig: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; liveSessionId?: string; resume?: boolean; displayScale?: number } | null = null;
+  let pendingSessionConfig: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; language?: string; liveSessionId?: string; resume?: boolean; displayScale?: number } | null = null;
   let audioContext: AudioContext | null = null;
   let mediaStream: MediaStream | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -491,8 +491,8 @@ export function useRealtimeTranscription(options?: {
     }
   }
 
-  /** Envía topic/keywords/version/audience/sesión/escala al backend por el frame `config`. Queues until OPEN. */
-  function sendSessionConfig(config: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; liveSessionId?: string; resume?: boolean; displayScale?: number }) {
+  /** Envía topic/keywords/version/audience/idioma/sesión/escala al backend por el frame `config`. Queues until OPEN. */
+  function sendSessionConfig(config: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; language?: string; liveSessionId?: string; resume?: boolean; displayScale?: number }) {
     if (client) {
       client.sendSessionConfig(config);
     } else {

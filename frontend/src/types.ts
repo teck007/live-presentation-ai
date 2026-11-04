@@ -1,4 +1,5 @@
 // Tipos compartidos entre la API y los componentes.
+import type { SupportedLocale } from "./i18n";
 // Respuesta del endpoint POST /api/transcribe del backend FastAPI.
 export interface TranscribeResponse {
   text: string;
@@ -84,6 +85,7 @@ export interface GenerateSlideRequest {
   keywords: string[];
   palette_id?: string | null;
   audience?: string;
+  language?: SupportedLocale;
   is_opening?: boolean | null;
 }
 

@@ -467,16 +467,21 @@ def _normalize_spanish(data: dict) -> dict:
     return d
 
 
-def validate_slide(data: dict, is_opening: bool = False) -> dict:
+def validate_slide(data: dict, is_opening: bool = False, language: str = "es") -> dict:
     """Validate + sanitize a slide dict. Never raises on bad input."""
     if not isinstance(data, dict):
         data = {}
     data = _normalize_spanish(data)
+    lang = str(language or "").strip().lower()
+    if lang not in ("es", "en"):
+        lang = "es"
+    default_title = "Live" if lang == "en" else "En vivo"
+    default_code_title = "Example" if lang == "en" else "Ejemplo"
     raw_layout = data.get("layout")
     layout = raw_layout if raw_layout in SLIDE_DESIGNS else None
     # Large editorial type: tight budgets so bigger glyphs never overflow.
     # Title 8-10 words (~100 chars), body 2-3 sentences 35-45 words (~400 chars).
-    title = _esc((data.get("title") or ""), 100).strip() or "En vivo"
+    title = _esc((data.get("title") or ""), 100).strip() or default_title
     text = _esc(data.get("text") or "", 400)
     bullets = _esc_list(data.get("bullets"))
     keywords = _esc_list(data.get("keywords"), 60)
@@ -504,7 +509,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
         if raw_tipo in _VALID_CODE_TIPOS:
             codigo_block = {
                 "tipo": raw_tipo,
-                "titulo": html.escape(raw_titulo or "Ejemplo", quote=True)[:80],
+                "titulo": html.escape(raw_titulo or default_code_title, quote=True)[:80],
                 "contenido": html.escape(str(data.get("code")).strip(), quote=True)[:1000],
             }
     code = _esc(data.get("code") or "", 1000) or ""
@@ -516,8 +521,8 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
         code_titulo = codigo_block["titulo"]
     elif code:
         code_tipo = "codigo"
-        code_titulo = "Ejemplo"
-        codigo_block = {"tipo": "codigo", "titulo": "Ejemplo", "contenido": code}
+        code_titulo = default_code_title
+        codigo_block = {"tipo": "codigo", "titulo": default_code_title, "contenido": code}
     relevant = False if data.get("relevant") is False else True
     filtered = data.get("filtered") is True
     # Max 2 support blocks besides titulo+texto: drop lowest-priority extra.
@@ -1143,9 +1148,9 @@ _LAYOUT_RENDERERS = {
 }
 
 
-def render_slide_html(slide: dict, palette: dict | None = None, is_opening: bool = False) -> str:
+def render_slide_html(slide: dict, palette: dict | None = None, is_opening: bool = False, language: str = "es") -> str:
     """Render a sanitized snippet (section only, no html/head)."""
-    s = validate_slide(slide, is_opening=is_opening)
+    s = validate_slide(slide, is_opening=is_opening, language=language)
     layout = s["layout"]
     canonical = ALIAS_MAP.get(layout, layout)
     renderer = _LAYOUT_RENDERERS.get(canonical, _title_text)

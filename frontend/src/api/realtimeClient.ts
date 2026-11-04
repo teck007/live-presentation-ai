@@ -29,6 +29,7 @@ export interface SessionConfig {
   topicVersion?: number;
   palette_id?: string;
   audience?: string;
+  language?: string;
   liveSessionId?: string;
   resume?: boolean;
   displayScale?: number;
@@ -95,6 +96,7 @@ export class RealtimeClient {
       if (options.topicVersion !== undefined) config.topicVersion = options.topicVersion;
       if (options.palette_id !== undefined) config.palette_id = options.palette_id;
       if (options.audience !== undefined) config.audience = options.audience;
+      if (options.language !== undefined) config.language = options.language;
       if (options.liveSessionId !== undefined) config.liveSessionId = options.liveSessionId;
       if (options.resume !== undefined) config.resume = options.resume;
       if (options.displayScale !== undefined) config.displayScale = options.displayScale;
@@ -163,6 +165,7 @@ export class RealtimeClient {
       if (config.topicVersion !== undefined) payload.topicVersion = config.topicVersion;
       if (config.palette_id !== undefined) payload.palette_id = config.palette_id;
       if (config.audience !== undefined) payload.audience = config.audience;
+      if (config.language !== undefined) payload.language = config.language;
       if (config.liveSessionId !== undefined) payload.liveSessionId = config.liveSessionId;
       if (config.resume !== undefined) payload.resume = config.resume;
       if (config.displayScale !== undefined) payload.displayScale = config.displayScale;

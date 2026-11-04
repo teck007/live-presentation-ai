@@ -80,6 +80,7 @@ export function useLivePresentation(options?: {
   // Single palette per session: first received wins, reused for POST calls.
   const paletteId = ref<string | null>(null);
   const audience = ref<string>("general");
+  const language = ref<string>("es");
 
   // Turnos ya reclamados por el WS (pending o filtered vistos): el POST los salta.
   const wsOwnedTurnIds = new Set<string>();
@@ -135,6 +136,12 @@ export function useLivePresentation(options?: {
     const v = (value || "").trim().toLowerCase();
     const valid = ["ninos", "estudiantes", "general", "profesionales", "expertos"];
     audience.value = valid.includes(v) ? v : "general";
+  }
+
+  function setLanguage(value: string) {
+    const v = (value || "").trim().toLowerCase();
+    const valid = ["es", "en"];
+    language.value = valid.includes(v) ? v : "es";
   }
 
   /** Maps 401/403 from slide generation to UI callbacks (redirects). */
@@ -508,6 +515,7 @@ export function useLivePresentation(options?: {
           keywords: item.keywords ?? [],
           palette_id: paletteId.value,
           audience: audience.value,
+          language: language.value as "es" | "en",
           is_opening: slides.value.length === 0,
         },
         options?.getToken,
@@ -572,6 +580,7 @@ export function useLivePresentation(options?: {
           keywords: [],
           palette_id: paletteId.value,
           audience: audience.value,
+          language: language.value as "es" | "en",
           is_opening: slides.value.length === 0,
         },
         options?.getToken,
@@ -620,13 +629,16 @@ export function useLivePresentation(options?: {
     }
     pending.value += 1;
     try {
+      const coverTranscript =
+        language.value === "en" ? `Presentation about: ${clean}` : `Presentación sobre: ${clean}`;
       const res = await generateSlide(
         {
-          transcript: `Presentación sobre: ${clean}`,
+          transcript: coverTranscript,
           topic: clean,
           keywords: [],
           palette_id: paletteId.value,
           audience: audience.value,
+          language: language.value as "es" | "en",
           is_opening: true,
         },
         options?.getToken,
@@ -717,6 +729,7 @@ export function useLivePresentation(options?: {
     maxPaintedSeq,
     paletteId,
     audience,
+    language,
     liveSessionId,
     getLiveSessionId,
     setLiveSessionId,
@@ -727,6 +740,7 @@ export function useLivePresentation(options?: {
     setTopicVersion,
     setPaletteId,
     setAudience,
+    setLanguage,
     isWsOwned,
     handleSlideEvent,
     queueTranscript,

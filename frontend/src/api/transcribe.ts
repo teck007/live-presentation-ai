@@ -30,9 +30,13 @@ export async function transcribeAudio(
   blob: Blob,
   filename: string,
   getToken?: GetTokenFn,
+  language?: string,
 ): Promise<TranscribeResponse> {
   const formData = new FormData();
   formData.append("file", blob, filename);
+  if (language === "es" || language === "en") {
+    formData.append("language", language);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);

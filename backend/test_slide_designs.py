@@ -424,6 +424,36 @@ def test_audience_normalization_fallback():
         assert normalize_audience(valid) == valid
 
 
+def test_language_normalization_fallback():
+    from backend.presentation_api.utils.llm_client import normalize_language
+
+    assert normalize_language(" EN ") == "en"
+    assert normalize_language("es") == "es"
+    assert normalize_language("") == "es"
+    assert normalize_language(None) == "es"
+    assert normalize_language("fr") == "es"
+    assert normalize_language("pt") == "es"
+
+
+def test_prompt_spanish_and_english_output_language():
+    from backend.presentation_api.utils.llm_client import (
+        SLIDE_SYSTEM_PROMPT,
+        build_system_prompt,
+    )
+
+    es_prompt = build_system_prompt("es")
+    en_prompt = build_system_prompt("en")
+    assert es_prompt == SLIDE_SYSTEM_PROMPT
+    assert "Solo espanol" in es_prompt
+    assert "Output language: English" in en_prompt
+    assert "English only" in en_prompt
+    # Image tags stay English in both variants.
+    assert "imagen_hashtag" in en_prompt
+    assert "imagen_prompt" in en_prompt
+    # Unknown locale falls back to Spanish.
+    assert build_system_prompt("fr") == SLIDE_SYSTEM_PROMPT
+
+
 def test_hero_kept_only_when_opening():
     base = {"layout": "hero_cover", "title": "T", "text": "apertura",
             "bullets": ["a"], "image": "https://example.com/a.jpg"}
@@ -705,3 +735,48 @@ def test_build_fast_prompt_con_sufijo():
 def test_prompt_indica_imagen_visual():
     prompt = list_designs_for_prompt()
     assert "imagen_prompt" in prompt
+
+
+def test_fallback_slide_localized_defaults():
+    from backend.presentation_api.utils.llm_client import _fallback_slide
+
+    es = _fallback_slide("hola mundo", [], "", language="es")
+    assert es["title"] == "En vivo" or es["title"]
+    assert es["text"] == "Contenido en vivo." or es["text"]
+    empty_es = _fallback_slide("", [], "", language="es")
+    assert empty_es["title"] == "En vivo"
+    assert empty_es["text"] == "Contenido en vivo."
+    empty_en = _fallback_slide("", [], "", language="en")
+    assert empty_en["title"] == "Live"
+    assert empty_en["text"] == "Live content."
+    assert empty_en["titulo"] == "Live"
+    assert empty_en["texto"] == "Live content."
+
+
+def test_validate_slide_localized_defaults():
+    en = validate_slide({}, language="en")
+    assert en["title"] == "Live"
+    es = validate_slide({}, language="es")
+    assert es["title"] == "En vivo"
+    unknown = validate_slide({})
+    assert unknown["title"] == "En vivo"
+
+
+def test_topic_cleaner_language_keywords():
+    from backend.presentation_api.utils.topic_cleaner import (
+        analyze_topic,
+        extract_keywords,
+        is_relevant,
+        normalize_language,
+    )
+
+    assert normalize_language("en") == "en"
+    assert normalize_language("xx") == "es"
+    en = analyze_topic("hello, um this is about photosynthesis and light energy", language="en")
+    assert "photosynthesis" in en["keywords"]
+    assert "um" not in en["keywords"]
+    es = analyze_topic("eh bueno la fotosíntesis y la energía de la luz", language="es")
+    assert "fotosíntesis" in es["keywords"]
+    assert "eh" not in es["keywords"]
+    assert is_relevant("photosynthesis converts light", "photosynthesis", language="en") is True
+    assert is_relevant("hola mundo", "photosynthesis", language="en") is False
