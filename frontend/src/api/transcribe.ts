@@ -1,8 +1,6 @@
 import type { TranscribeResponse } from "../types";
-
-// Base del backend, configurable con VITE_API_BASE_URL.
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8000";
+import { API_BASE_URL, authHeaders, throwForAuthStatus } from "./auth";
+import type { GetTokenFn } from "./auth";
 
 // Tiempo maximo de espera para la transcripcion (180 segundos).
 const TIMEOUT_MS = 180_000;
@@ -31,6 +29,7 @@ async function extractDetail(response: Response): Promise<string> {
 export async function transcribeAudio(
   blob: Blob,
   filename: string,
+  getToken?: GetTokenFn,
 ): Promise<TranscribeResponse> {
   const formData = new FormData();
   formData.append("file", blob, filename);
@@ -40,10 +39,13 @@ export async function transcribeAudio(
   try {
     const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
       method: "POST",
+      headers: await authHeaders(getToken),
       body: formData,
       signal: controller.signal,
     });
     if (!response.ok) {
+      // 401 -> sign in, 403 -> trial ended (typed, no expires_at leak).
+      throwForAuthStatus(response.status);
       const detail = await extractDetail(response);
       throw new Error(`Error ${response.status}: ${detail}`);
     }

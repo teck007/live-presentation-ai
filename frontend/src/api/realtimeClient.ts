@@ -29,6 +29,9 @@ export interface SessionConfig {
   topicVersion?: number;
   palette_id?: string;
   audience?: string;
+  liveSessionId?: string;
+  resume?: boolean;
+  displayScale?: number;
 }
 
 export type RealtimeClientEvents = {
@@ -40,7 +43,8 @@ export type RealtimeClientEvents = {
 
 /**
  * Cliente WS realtime: PCM binario hacia arriba, eventos JSON hacia abajo.
- * No reintenta solo ante 1008 (sesion invalida); 1011/1013 con backoff.
+ * No reintenta ante 1008/4401 (sesión inválida o sin auth/trial);
+ * 1011/1013 con backoff.
  */
 export class RealtimeClient {
   private socket: WebSocket | null = null;
@@ -49,6 +53,7 @@ export class RealtimeClient {
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingConfig: SessionConfig | null = null;
+  private authToken: string | null = null;
   readonly url: string;
 
   constructor(events: RealtimeClientEvents, url?: string) {
@@ -60,6 +65,17 @@ export class RealtimeClient {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
+  /** Clerk JWT for the WS handshake (sent as ?token=, reused on retries). */
+  setAuthToken(token: string | null): void {
+    this.authToken = token && token.length > 0 ? token : null;
+  }
+
+  private urlWithAuth(): string {
+    if (!this.authToken) return this.url;
+    const sep = this.url.includes("?") ? "&" : "?";
+    return `${this.url}${sep}token=${encodeURIComponent(this.authToken)}`;
+  }
+
   connect(silencePauseMsOrOptions?: number | SessionConfig): void {
     this.manualClose = false;
     this.disconnect(1000, "reconnect");
@@ -67,7 +83,7 @@ export class RealtimeClient {
       typeof silencePauseMsOrOptions === "number"
         ? { silencePauseMs: silencePauseMsOrOptions }
         : (silencePauseMsOrOptions ?? {});
-    const socket = new WebSocket(this.url);
+    const socket = new WebSocket(this.urlWithAuth());
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.onopen = () => {
@@ -79,6 +95,9 @@ export class RealtimeClient {
       if (options.topicVersion !== undefined) config.topicVersion = options.topicVersion;
       if (options.palette_id !== undefined) config.palette_id = options.palette_id;
       if (options.audience !== undefined) config.audience = options.audience;
+      if (options.liveSessionId !== undefined) config.liveSessionId = options.liveSessionId;
+      if (options.resume !== undefined) config.resume = options.resume;
+      if (options.displayScale !== undefined) config.displayScale = options.displayScale;
       if (Object.keys(config).length > 1) {
         this.sendControl(config);
       }
@@ -107,8 +126,9 @@ export class RealtimeClient {
     };
     socket.onclose = (ev: CloseEvent) => {
       this.events.onClose?.(ev.code, ev.reason);
-      // 1008: no reintentar la misma sesion. Cierre manual: tampoco.
-      if (this.manualClose || ev.code === 1008) return;
+      // 1008/4401: rechazo definitivo (sesión inválida o sin auth/trial).
+      // Cierre manual: tampoco reintentar.
+      if (this.manualClose || ev.code === 1008 || ev.code === 4401) return;
       // 1011/1013 o cierres abnormales: backoff (max 3 intentos).
       if (this.retries < 3) {
         const delay = [1000, 2000, 4000][this.retries] ?? 4000;
@@ -143,6 +163,9 @@ export class RealtimeClient {
       if (config.topicVersion !== undefined) payload.topicVersion = config.topicVersion;
       if (config.palette_id !== undefined) payload.palette_id = config.palette_id;
       if (config.audience !== undefined) payload.audience = config.audience;
+      if (config.liveSessionId !== undefined) payload.liveSessionId = config.liveSessionId;
+      if (config.resume !== undefined) payload.resume = config.resume;
+      if (config.displayScale !== undefined) payload.displayScale = config.displayScale;
       this.sendControl(payload);
       return;
     }

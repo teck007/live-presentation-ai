@@ -50,21 +50,27 @@ interface FrameMessage {
  */
 export function useRealtimeTranscription(options?: {
   onSlideEvent?: (event: SlideWsEvent) => void;
+  onLiveSession?: (liveSessionId: string) => void;
 }) {
   const status = ref<RealtimeStatus>("idle");
   const error = ref<string | null>(null);
   const notice = ref<string | null>(null);
+  // True when the WS closed with 4401 (auth/trial rejected): UI must
+  // re-check the trial and route to sign-in or the expired view.
+  const authBlocked = ref(false);
   const finalItems = ref<TranscriptItem[]>([]);
   const serverPaused = ref(false);
   // Versión de topic vigente reflejada del backend (eventos slide_* la portan).
   const topicVersion = ref(1);
+  // Id de sesión viva del bridge (estable entre reintentos WS).
+  const liveSessionId = ref<string | null>(null);
 
   const turnMap = ref<Map<string, TurnState>>(new Map());
   const turnOrder = ref<string[]>([]);
   let lastActiveTurnId: string | null = null;
 
   let client: RealtimeClient | null = null;
-  let pendingSessionConfig: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string } | null = null;
+  let pendingSessionConfig: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; liveSessionId?: string; resume?: boolean; displayScale?: number } | null = null;
   let audioContext: AudioContext | null = null;
   let mediaStream: MediaStream | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -137,6 +143,17 @@ export function useRealtimeTranscription(options?: {
 
   /** Aplica un evento del servidor con semantica replace para parciales. */
   function applyServerEvent(event: ServerEvent) {
+    // Identidad de sesión viva: se refleja y se reenvía (como los slide_*).
+    if (event.type === "live_session") {
+      if (typeof event.live_session_id === "string" && event.live_session_id) {
+        liveSessionId.value = event.live_session_id;
+        options?.onLiveSession?.(event.live_session_id);
+      }
+      if (typeof event.topicVersion === "number" && event.topicVersion > topicVersion.value) {
+        topicVersion.value = event.topicVersion;
+      }
+      return;
+    }
     // Los eventos slide_* no tocan el estado de transcripción: se reenvían.
     if (
       event.type === "slide_pending" ||
@@ -145,7 +162,8 @@ export function useRealtimeTranscription(options?: {
       event.type === "slide_kept" ||
       event.type === "slide_error" ||
       event.type === "slide_replaced" ||
-      event.type === "slide_removed"
+      event.type === "slide_removed" ||
+      event.type === "slide_image_updated"
     ) {
       if (typeof event.topicVersion === "number" && event.topicVersion > topicVersion.value) {
         topicVersion.value = event.topicVersion;
@@ -307,9 +325,10 @@ export function useRealtimeTranscription(options?: {
   }
 
   /** Inicia microfono + worklet + WS. Mantiene el grabador por lotes como fallback. */
-  async function start() {
+  async function start(authToken?: string | null) {
     error.value = null;
     notice.value = null;
+    authBlocked.value = false;
     if (status.value === "connecting" || status.value === "listening" || status.value === "speaking") return;
     if (!navigator.mediaDevices?.getUserMedia) {
       error.value =
@@ -388,6 +407,14 @@ export function useRealtimeTranscription(options?: {
           }
         },
         onClose: (code) => {
+          // 4401: auth/trial rejected by the backend, no retry (see client).
+          if (code === 4401) {
+            authBlocked.value = true;
+            error.value =
+              "Acceso denegado al realtime (4401): sesión inválida o prueba finalizada.";
+            status.value = "error";
+            return;
+          }
           if (status.value !== "idle" && status.value !== "error") {
             if (code !== 1000) {
               error.value = `Conexión realtime cerrada (código ${code}).`;
@@ -400,6 +427,7 @@ export function useRealtimeTranscription(options?: {
           status.value = "error";
         },
       });
+      client.setAuthToken(authToken ?? null);
       client.connect(IDLE_PAUSE_HINT_MS);
     } catch (err) {
       cleanupAudio();
@@ -463,8 +491,8 @@ export function useRealtimeTranscription(options?: {
     }
   }
 
-  /** Envía topic/keywords/version/audience al backend por el frame `config`. Queues until OPEN. */
-  function sendSessionConfig(config: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string }) {
+  /** Envía topic/keywords/version/audience/sesión/escala al backend por el frame `config`. Queues until OPEN. */
+  function sendSessionConfig(config: { topic?: string; keywords?: string[]; topicVersion?: number; palette_id?: string; audience?: string; liveSessionId?: string; resume?: boolean; displayScale?: number }) {
     if (client) {
       client.sendSessionConfig(config);
     } else {
@@ -480,11 +508,13 @@ export function useRealtimeTranscription(options?: {
     status,
     error,
     notice,
+    authBlocked,
     partialText,
     activeTurnCount,
     finalItems,
     turnMap,
     topicVersion,
+    liveSessionId,
     serverPaused,
     prefilterEnabled,
     prefilterThreshold,

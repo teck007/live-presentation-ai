@@ -1,5 +1,7 @@
 import { ref } from "vue";
 import { generateSlide } from "../api/presentation";
+import { AuthRequiredError, TrialExpiredError } from "../api/auth";
+import type { GetTokenFn } from "../api/auth";
 import type { SlideItem, SlideReplacedEvent, SlideWsEvent, SlideWsSlideEvent, TranscriptItem } from "../types";
 
 // Evento terminal que pinta: slide nuevo o reemplazo de regen.
@@ -7,6 +9,41 @@ type SlidePaintEvent = SlideWsSlideEvent | SlideReplacedEvent;
 
 // Evita saturar al LLM: espera este silencio antes de enviar el turno final.
 const DEBOUNCE_MS = 4000;
+
+// Live session id per tab: reused across WS retries, renewed per presentation.
+const LIVE_SESSION_KEY = "livePresentation.liveSessionId";
+
+function newSessionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID().replace(/-/g, "");
+    }
+  } catch {
+    // Fallback below (non-secure contexts).
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 18)}`;
+}
+
+function readLiveSessionId(): string {
+  try {
+    const stored = sessionStorage.getItem(LIVE_SESSION_KEY);
+    if (stored && stored.trim()) return stored.trim();
+  } catch {
+    // sessionStorage opcional (SSR/tests): se genera uno en memoria.
+    return newSessionId();
+  }
+  const fresh = newSessionId();
+  persistLiveSessionId(fresh);
+  return fresh;
+}
+
+function persistLiveSessionId(id: string): void {
+  try {
+    sessionStorage.setItem(LIVE_SESSION_KEY, id);
+  } catch {
+    // Persistencia opcional.
+  }
+}
 
 function readWsSlidesFlag(): boolean {
   try {
@@ -24,7 +61,13 @@ function readWsSlidesFlag(): boolean {
  * o inserción directa de eventos WS slide_* (flag-on).
  * El LLM devuelve JSON plano (layout + texto); el diseño vive en SlideCanvas.
  */
-export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersion?: number }) {
+export function useLivePresentation(options?: {
+  wsEnabled?: boolean;
+  topicVersion?: number;
+  getToken?: GetTokenFn;
+  onTrialExpired?: () => void;
+  onUnauthorized?: () => void;
+}) {
   const slides = ref<SlideItem[]>([]);
   const pending = ref(0);
   const error = ref<string | null>(null);
@@ -45,6 +88,9 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
   // seq -> slide id, para inserción ordenada por llegada (seq de arribo backend).
   const slideSeqById = new Map<string, number>();
   const maxPaintedSeq = ref(0);
+  // Live session id (sessionStorage por pestaña): se reutiliza en reintentos
+  // WS y se renueva con cada presentación nueva.
+  const liveSessionId = ref<string>(readLiveSessionId());
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let queued: TranscriptItem | null = null;
@@ -52,6 +98,20 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
   // Dedupe opción B: red de seguridad por turnId (el origen ya evita el doble push).
   const seenTurnIds = new Set<string>();
   let lastSentKey = "";
+  // Reintento: último intento fallido o filtrado para reencolar sin tocar auth/trial.
+  const lastAttempt = ref<TranscriptItem | null>(null);
+  const lastTestText = ref("");
+  let filteredTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Muestra "fuera de tema" 3s y luego lo oculta solo. */
+  function markFiltered() {
+    lastFiltered.value = true;
+    if (filteredTimer) clearTimeout(filteredTimer);
+    filteredTimer = setTimeout(() => {
+      lastFiltered.value = false;
+      filteredTimer = null;
+    }, 3000);
+  }
 
   function setTopic(value: string) {
     topic = value.trim();
@@ -77,6 +137,21 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     audience.value = valid.includes(v) ? v : "general";
   }
 
+  /** Maps 401/403 from slide generation to UI callbacks (redirects). */
+  function handleAuthError(err: unknown): boolean {
+    if (err instanceof TrialExpiredError) {
+      error.value = err.message;
+      options?.onTrialExpired?.();
+      return true;
+    }
+    if (err instanceof AuthRequiredError) {
+      error.value = err.message;
+      options?.onUnauthorized?.();
+      return true;
+    }
+    return false;
+  }
+
   function isWsOwned(turnId: string): boolean {
     return wsOwnedTurnIds.has(turnId);
   }
@@ -85,6 +160,12 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     slides.value = [];
     error.value = null;
     lastFiltered.value = false;
+    if (filteredTimer) {
+      clearTimeout(filteredTimer);
+      filteredTimer = null;
+    }
+    lastAttempt.value = null;
+    lastTestText.value = "";
     queued = null;
     seenTurnIds.clear();
     wsOwnedTurnIds.clear();
@@ -121,19 +202,117 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     if (seq > maxPaintedSeq.value) maxPaintedSeq.value = seq;
   }
 
+  function optimisticId(turnId: string): string {
+    return `${turnId}-optimistic`;
+  }
+
+  function removeOptimistic(turnId: string | null | undefined) {
+    if (!turnId) return;
+    const id = optimisticId(turnId);
+    for (let i = slides.value.length - 1; i >= 0; i--) {
+      if (slides.value[i].id === id) {
+        slideSeqById.delete(id);
+        slides.value.splice(i, 1);
+      }
+    }
+  }
+
+  /** Preview local inmediato: pinta al encolar, el slide real lo reemplaza. */
+  function ensureOptimistic(item: TranscriptItem) {
+    const turnId = item.sessionId;
+    if (!turnId || slideSeqById.has(optimisticId(turnId))) return;
+    const words = item.text.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return;
+    const title = words.slice(0, 8).join(" ") || "En vivo";
+    const short = words.slice(0, 30).join(" ");
+    insertBySeq(
+      {
+        layout: "title_text",
+        title,
+        titulo: title,
+        text: short,
+        texto: short,
+        bullets: [],
+        listado: [],
+        keywords: item.keywords ?? [],
+        filtered: false,
+        id: optimisticId(turnId),
+        timestamp: Date.now(),
+        pending: true,
+        optimistic: true,
+      },
+      maxPaintedSeq.value + 0.5,
+    );
+  }
+
+  /** Id de sesión viva vigente (reutilizado en reintentos WS). */
+  function getLiveSessionId(): string {
+    return liveSessionId.value;
+  }
+
+  /** Adopta un id existente (resume) y lo persiste por pestaña. */
+  function setLiveSessionId(id: string): void {
+    const clean = (id || "").trim();
+    if (!clean) return;
+    liveSessionId.value = clean;
+    persistLiveSessionId(clean);
+  }
+
+  /** Presentación nueva: id fresco + estado limpio. */
+  function rotateLiveSessionId(): string {
+    const fresh = newSessionId();
+    liveSessionId.value = fresh;
+    persistLiveSessionId(fresh);
+    return fresh;
+  }
+
+  /**
+   * Restaura slides guardados (resume): reemplaza el estado local en orden.
+   * Los seq del backend son monótonos, así que los eventos futuros
+   * (seq mayores) se ordenan después del snapshot.
+   */
+  function loadSnapshot(items: SlideItem[]): void {
+    clear();
+    items.forEach((item, index) => {
+      const seq = index + 1;
+      slides.value.push({ ...item });
+      slideSeqById.set(item.id, seq);
+      if (seq > maxPaintedSeq.value) maxPaintedSeq.value = seq;
+    });
+  }
+
+  /** Elimina por ids exactos; el prefijo solo como fallback legacy. */
+  function removeSlideByIds(...matchers: (string | null | undefined)[]): boolean {
+    const ids = new Set<string>();
+    let prefix: string | null = null;
+    for (const m of matchers) {
+      if (!m) continue;
+      if (m.endsWith("-")) {
+        if (!prefix) prefix = m;
+      } else {
+        ids.add(m);
+      }
+    }
+    let removed = false;
+    for (let i = slides.value.length - 1; i >= 0; i--) {
+      const id = slides.value[i].id;
+      if (ids.has(id) || (prefix && id.startsWith(prefix))) {
+        slideSeqById.delete(id);
+        slides.value.splice(i, 1);
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
   /** Pinta un terminal de inmediato, en posición ordenada por seq. */
   function paintSlide(event: SlidePaintEvent) {
     error.value = null;
     lastFiltered.value = false;
-    // Regen: el reemplazo elimina el slide anterior del mismo turno al pintar.
+    // Regen: elimina el slide anterior por id exacto (replaces/targetSlideId);
+    // el prefijo turnId solo como fallback legacy.
     if (event.type === "slide_replaced") {
-      const prefix = `${event.turnId}-`;
-      for (let i = slides.value.length - 1; i >= 0; i--) {
-        if (slides.value[i].id.startsWith(prefix)) {
-          slideSeqById.delete(slides.value[i].id);
-          slides.value.splice(i, 1);
-        }
-      }
+      removeSlideByIds(event.replaces, event.targetSlideId, `${event.turnId}-`);
     }
     insertBySeq(
       {
@@ -184,7 +363,8 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
    * - `slide_filtered`: solo log, sin pintar (pero reclama el turno).
    * - `slide_kept`: como `slide_filtered` (log, sin pintar).
    *   El gate decidió que el slide actual ya cubre el turno.
-   * - `slide_replaced`: como `slide`, pero elimina al pintar el slide anterior del turno.
+   * - `slide_replaced`: como `slide`, pero elimina al pintar el slide anterior
+   *   por id exacto (replaces/targetSlideId, prefijo turnId solo fallback).
    * - `slide_removed`: elimina el slide del turno.
    * - `slide_error`: pinta el error.
    * - `slide_image_updated`: parchea image (+html) del slide `${turnId}-${seq}`
@@ -198,7 +378,8 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     }
     // First palette wins: keep session stable.
     if (
-      (event.type === "slide" || event.type === "slide_replaced") &&
+      (event.type === "slide" ||
+        event.type === "slide_replaced") &&
       typeof event.palette_id === "string" &&
       event.palette_id &&
       !paletteId.value
@@ -218,6 +399,16 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
       case "slide": {
         wsOwnedTurnIds.add(event.turnId);
         trackTerminal(event.turnId);
+        removeOptimistic(event.turnId);
+        // Portada REST ya pintada (cover-*): el primer turno WS con
+        // is_opening no duplica el hero_cover.
+        if (
+          event.layout === "hero_cover" &&
+          slides.value.some((s) => s.id.startsWith("cover-") && s.layout === "hero_cover")
+        ) {
+          console.info(`[slides] cover duplicada ignorada turnId=${event.turnId} seq=${event.seq}`);
+          break;
+        }
         // Pre-paint guard: versión vieja nunca pinta aunque haya pasado el server.
         if (event.topicVersion !== currentTopicVersion.value) break;
         // Dedupe: el mismo turno+seq nunca pinta dos veces.
@@ -228,7 +419,8 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
       case "slide_filtered": {
         wsOwnedTurnIds.add(event.turnId);
         trackTerminal(event.turnId);
-        lastFiltered.value = true;
+        removeOptimistic(event.turnId);
+        markFiltered();
         // Silencioso en UI; visible solo en logs.
         console.info(
           `[slides] filtrado turnId=${event.turnId} seq=${event.seq} v=${event.topicVersion}`,
@@ -238,6 +430,7 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
       case "slide_kept": {
         wsOwnedTurnIds.add(event.turnId);
         trackTerminal(event.turnId);
+        removeOptimistic(event.turnId);
         // Gate keep: el slide actual ya cubre el turno. Log, sin pintar.
         console.info(
           `[slides] kept turnId=${event.turnId} seq=${event.seq} v=${event.topicVersion}`,
@@ -247,6 +440,15 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
       case "slide_replaced": {
         wsOwnedTurnIds.add(event.turnId);
         trackTerminal(event.turnId);
+        removeOptimistic(event.turnId);
+        // Portada REST ya pintada (cover-*): no se reemplaza/duplica hero_cover.
+        if (
+          event.layout === "hero_cover" &&
+          slides.value.some((s) => s.id.startsWith("cover-") && s.layout === "hero_cover")
+        ) {
+          console.info(`[slides] cover duplicada ignorada turnId=${event.turnId} seq=${event.seq}`);
+          break;
+        }
         // Pre-paint guard: versión vieja nunca pinta aunque haya pasado el server.
         if (event.topicVersion !== currentTopicVersion.value) break;
         // Dedupe: el mismo turno+seq nunca pinta dos veces.
@@ -258,13 +460,7 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
         wsOwnedTurnIds.add(event.turnId);
         trackTerminal(event.turnId);
         if (event.topicVersion !== currentTopicVersion.value) break;
-        const prefix = `${event.turnId}-`;
-        for (let i = slides.value.length - 1; i >= 0; i--) {
-          if (slides.value[i].id.startsWith(prefix)) {
-            slideSeqById.delete(slides.value[i].id);
-            slides.value.splice(i, 1);
-          }
-        }
+        removeSlideByIds(`${event.turnId}-${event.seq}`, `${event.turnId}-`);
         break;
       }
       case "slide_error": {
@@ -301,19 +497,27 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     if (key === lastSentKey) return;
     if (item.sessionId) seenTurnIds.add(item.sessionId);
     lastSentKey = key;
+    lastAttempt.value = item;
     pending.value += 1;
     error.value = null;
     try {
-      const res = await generateSlide({
-        transcript: item.text,
-        topic,
-        keywords: item.keywords ?? [],
-        palette_id: paletteId.value,
-        audience: audience.value,
-        is_opening: slides.value.length === 0,
-      });
-      lastFiltered.value = res.filtered;
-      if (res.filtered) return;
+      const res = await generateSlide(
+        {
+          transcript: item.text,
+          topic,
+          keywords: item.keywords ?? [],
+          palette_id: paletteId.value,
+          audience: audience.value,
+          is_opening: slides.value.length === 0,
+        },
+        options?.getToken,
+      );
+      removeOptimistic(item.sessionId);
+      if (res.filtered) {
+        markFiltered();
+        return;
+      }
+      lastFiltered.value = false;
       if (typeof res.palette_id === "string" && res.palette_id && !paletteId.value) {
         paletteId.value = res.palette_id;
       }
@@ -323,8 +527,11 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
         timestamp: Date.now(),
       });
     } catch (err) {
-      error.value =
-        err instanceof Error ? err.message : "No se pudo generar el slide.";
+      removeOptimistic(item.sessionId);
+      if (!handleAuthError(err)) {
+        error.value =
+          err instanceof Error ? err.message : "No se pudo generar el slide.";
+      }
     } finally {
       pending.value = Math.max(0, pending.value - 1);
     }
@@ -334,7 +541,15 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
   function queueTranscript(item: TranscriptItem) {
     // Flag-on: el WS es el único productor; no se encola al POST.
     if (wsSlidesEnabled.value) return;
+    // Single-producer: si el WS ya reclamó este turnId, el POST no compite.
+    if (item.sessionId && wsOwnedTurnIds.has(item.sessionId)) return;
+    if (!item.text.trim()) return;
+    // Solo el último encolado sobrevive al debounce: retira el preview previo.
+    if (queued?.sessionId && queued.sessionId !== item.sessionId) {
+      removeOptimistic(queued.sessionId);
+    }
     queued = item;
+    ensureOptimistic(item);
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => void flush(), DEBOUNCE_MS);
   }
@@ -345,19 +560,27 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
   async function submitTestTranscript(text: string): Promise<void> {
     const transcript = text.trim();
     if (transcript.length < 3) return;
+    lastTestText.value = transcript;
+    lastAttempt.value = { text: transcript, sessionId: null, keywords: [] };
     pending.value += 1;
     error.value = null;
     try {
-      const res = await generateSlide({
-        transcript,
-        topic,
-        keywords: [],
-        palette_id: paletteId.value,
-        audience: audience.value,
-        is_opening: slides.value.length === 0,
-      });
-      lastFiltered.value = res.filtered;
-      if (res.filtered) return;
+      const res = await generateSlide(
+        {
+          transcript,
+          topic,
+          keywords: [],
+          palette_id: paletteId.value,
+          audience: audience.value,
+          is_opening: slides.value.length === 0,
+        },
+        options?.getToken,
+      );
+      if (res.filtered) {
+        markFiltered();
+        return;
+      }
+      lastFiltered.value = false;
       if (typeof res.palette_id === "string" && res.palette_id && !paletteId.value) {
         paletteId.value = res.palette_id;
       }
@@ -367,11 +590,121 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
         timestamp: Date.now(),
       });
     } catch (err) {
-      error.value =
-        err instanceof Error ? err.message : "No se pudo generar el slide.";
+      if (!handleAuthError(err)) {
+        error.value =
+          err instanceof Error ? err.message : "No se pudo generar el slide.";
+      }
     } finally {
       pending.value = Math.max(0, pending.value - 1);
     }
+  }
+
+  /**
+   * Portada automática al Iniciar en vivo (arranque fresco, canvas vacío).
+   * Usa el mismo POST /generate con is_opening:true para forzar hero_cover.
+   * No bloquea el mic: el llamador la dispara sin await. Inserta con seq 0
+   * para quedar siempre primera aunque el WS pinte seq>=1 antes.
+   * Fail-open: si el LLM filtra o falla (no-auth), pinta fallback local.
+   */
+  async function generateCover(rawTopic: string): Promise<void> {
+    const clean = (rawTopic ?? "").trim().slice(0, 300);
+    if (clean.length < 3) return;
+    // Dedupe: misma portada ya pintada (doble click en Iniciar).
+    const first = slides.value[0];
+    if (
+      first?.layout === "hero_cover" &&
+      (first.title || first.titulo || "").trim().toLowerCase() === clean.toLowerCase() &&
+      first.id.startsWith("cover-")
+    ) {
+      return;
+    }
+    pending.value += 1;
+    try {
+      const res = await generateSlide(
+        {
+          transcript: `Presentación sobre: ${clean}`,
+          topic: clean,
+          keywords: [],
+          palette_id: paletteId.value,
+          audience: audience.value,
+          is_opening: true,
+        },
+        options?.getToken,
+      );
+      if (typeof res.palette_id === "string" && res.palette_id && !paletteId.value) {
+        paletteId.value = res.palette_id;
+      }
+      if (res.filtered) {
+        insertBySeq(
+          {
+            layout: "hero_cover",
+            title: clean,
+            titulo: clean,
+            text: "",
+            texto: "",
+            bullets: [],
+            listado: [],
+            keywords: [],
+            filtered: false,
+            id: `cover-${Date.now()}`,
+            timestamp: Date.now(),
+          },
+          0,
+        );
+        return;
+      }
+      lastFiltered.value = false;
+      insertBySeq(
+        {
+          ...res,
+          layout: "hero_cover",
+          title: res.title || clean,
+          titulo: res.titulo || res.title || clean,
+          id: `cover-${Date.now()}`,
+          timestamp: Date.now(),
+        },
+        0,
+      );
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      // Fallback local: el live sigue aunque el LLM falle.
+      insertBySeq(
+        {
+          layout: "hero_cover",
+          title: clean,
+          titulo: clean,
+          text: "",
+          texto: "",
+          bullets: [],
+          listado: [],
+          keywords: [],
+          filtered: false,
+          id: `cover-${Date.now()}`,
+          timestamp: Date.now(),
+        },
+        0,
+      );
+    } finally {
+      pending.value = Math.max(0, pending.value - 1);
+    }
+  }
+
+  /** Reencola el último transcript tras un error (no toca auth/trial). */
+  function retryLast(): void {    if (pending.value > 0) return;
+    error.value = null;
+    // Si vino de la caja de prueba, reenvía el texto directo sin debounce.
+    if (lastTestText.value.trim().length >= 3) {
+      const text = lastTestText.value;
+      lastTestText.value = "";
+      void submitTestTranscript(text);
+      return;
+    }
+    const item = lastAttempt.value;
+    if (!item || !item.text.trim()) return;
+    // Limpia dedupe solo para este reintento puntual.
+    if (item.sessionId) seenTurnIds.delete(item.sessionId);
+    lastSentKey = "";
+    queueTranscript(item);
   }
 
   return {
@@ -384,6 +717,11 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     maxPaintedSeq,
     paletteId,
     audience,
+    liveSessionId,
+    getLiveSessionId,
+    setLiveSessionId,
+    rotateLiveSessionId,
+    loadSnapshot,
     setTopic,
     setWsEnabled,
     setTopicVersion,
@@ -393,6 +731,8 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
     handleSlideEvent,
     queueTranscript,
     submitTestTranscript,
+    generateCover,
+    retryLast,
     clear,
   };
 }

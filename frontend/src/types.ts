@@ -126,6 +126,10 @@ export interface GenerateSlideResponse {
 export interface SlideItem extends GenerateSlideResponse {
   id: string;
   timestamp: number;
+  // Local optimistic preview: painted instantly at queue time, replaced
+  // by the real slide when the LLM responds (never sent to the backend).
+  pending?: boolean;
+  optimistic?: boolean;
 }
 
 // Estado visible de la sesion realtime.
@@ -272,11 +276,15 @@ export interface SlideErrorEvent {
 }
 
 // Regen of a painted turn: replaces or removes the existing slide.
+// `replaces`/`targetSlideId` identify the exact slide to delete
+// (turnId prefix alone never matches a regen source turn).
 export interface SlideReplacedEvent {
   type: "slide_replaced";
   turnId: string;
   seq: number;
   topicVersion: number;
+  replaces?: string;
+  targetSlideId?: string;
   layout: SlideLayoutId;
   title: string;
   titulo?: string;
@@ -351,6 +359,25 @@ export function isSlideWsEvent(event: ServerEvent): event is SlideWsEvent {
   );
 }
 
+// Saved live session (resume check behind Clerk auth).
+export interface LiveSessionStatus {
+  has_saved: boolean;
+  live_session_id: string | null;
+  topic: string;
+  slide_count: number;
+  displayScale: number;
+  updated_at: string | null;
+}
+
+// Bridge session identity: same live_session_id across WS retries.
+export interface LiveSessionEvent {
+  type: "live_session";
+  live_session_id: string;
+  topicVersion?: number;
+  palette_id?: string;
+  palette?: Record<string, string>;
+}
+
 export type ServerEvent =
   | MetaSpeechStartEvent
   | MetaTranscriptEvent
@@ -360,4 +387,5 @@ export type ServerEvent =
   | BridgeResumedEvent
   | BridgeUpstreamCloseEvent
   | BridgeErrorEvent
+  | LiveSessionEvent
   | SlideWsEvent;
