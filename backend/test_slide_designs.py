@@ -159,8 +159,8 @@ def test_render_structural_per_layout():
         "layout": "split_media", "title": "T", "text": "lugar bonito",
         "bullets": ["a", "b"], "image": "https://example.com/b.jpg",
     })
-    assert "<img" not in media and "h-slide" in media
-    assert 'class="media"' in media and 'class="placeholder"' in media
+    assert "<img" in media and "h-slide" in media
+    assert 'class="media"' in media and 'fetchpriority="high"' in media
     sep = render_slide_html({"layout": "separator", "title": "Pausa", "text": "descanso"})
     assert "Pausa" in sep and "scrim-side" in sep
     comp = render_slide_html({
@@ -437,11 +437,23 @@ def test_split_placeholder_no_img():
     snippet = render_slide_html({
         "layout": "split_media", "title": "T", "text": "lugar bonito",
         "bullets": ["a", "b", "c", "d"],
-        "image": "https://example.com/b.jpg",
+        "imagen_hashtag": "beach, sunset",
     })
     assert "<img" not in snippet
     assert 'class="media"' in snippet and 'class="placeholder"' in snippet
     assert "h-slide" in snippet
+
+
+def test_split_real_image_renders_img():
+    snippet = render_slide_html({
+        "layout": "split_media", "title": "T", "text": "lugar bonito",
+        "bullets": ["a", "b", "c", "d"],
+        "image": "https://example.com/b.jpg",
+    })
+    assert "<img" in snippet
+    assert 'src="https://example.com/b.jpg"' in snippet
+    assert 'loading="lazy"' in snippet and 'fetchpriority="high"' in snippet
+    assert 'class="media"' in snippet
 
 
 def test_prompt_opening_only_and_negative_rule():
@@ -634,3 +646,62 @@ def test_prompt_spanish_composite_and_tokens():
     assert MAX_COMPLETION_TOKENS >= 1500
     for token in ("titulo", "texto", "imagen_hashtag", "conceptos", "listado", "codigo_matematica", "icono"):
         assert token in SLIDE_SYSTEM_PROMPT, token
+
+
+# --- Imágenes generativas progresivas (vivo efímero) ---
+
+def test_supports_image_catalog():
+    from backend.presentation_api.utils.slide_designs import SLIDE_DESIGNS
+
+    assert SLIDE_DESIGNS["split_media"]["supports_image"] is True
+    assert SLIDE_DESIGNS["hero_cover"]["supports_image"] is True
+    for lid in ("title_text", "bullets_flex", "split_code", "quote", "cards_flex"):
+        assert SLIDE_DESIGNS[lid]["supports_image"] is False, lid
+
+
+def test_should_generate_image_por_layout():
+    from backend.presentation_api.utils.slide_designs import should_generate_image
+
+    assert should_generate_image("split_media", "a red bicycle") is True
+    assert should_generate_image("hero_cover", "a red bicycle") is True
+    assert should_generate_image("text_image", "a red bicycle") is True  # alias visual
+    assert should_generate_image("split_media", "") is False
+    assert should_generate_image("split_media", "   ") is False
+    assert should_generate_image("split_media", None) is False
+    assert should_generate_image("title_text", "a red bicycle") is False
+    assert should_generate_image("split_code", "a red bicycle") is False
+    assert should_generate_image("quote", "a red bicycle") is False
+
+
+def test_imagen_prompt_sanitizado_y_nulificado():
+    v = validate_slide({
+        "layout": "split_media", "title": "T", "text": "x",
+        "imagen_prompt": '<script>alert(1)</script> a red bicycle',
+    })
+    assert "<script>" not in v["imagen_prompt"]
+    assert "&lt;script&gt;" in v["imagen_prompt"]
+    long_prompt = "a " + "x" * 500
+    assert len(validate_slide({
+        "layout": "split_media", "title": "T", "text": "x",
+        "imagen_prompt": long_prompt,
+    })["imagen_prompt"]) <= 300
+    # Layout no visual nulifica el prompt.
+    assert validate_slide({
+        "layout": "title_text", "title": "T", "text": "x",
+        "imagen_prompt": "a red bicycle",
+    })["imagen_prompt"] == ""
+
+
+def test_build_fast_prompt_con_sufijo():
+    from backend.presentation_api.utils.slide_designs import build_fast_prompt
+
+    prompt = build_fast_prompt("Fotosintesis", "a green leaf", "photosynthesis")
+    assert "Fotosintesis" in prompt
+    assert "a green leaf" in prompt
+    assert prompt.endswith("flat vector illustration, no text, simple background")
+    assert len(build_fast_prompt("t" * 500, "p" * 500, "g" * 500)) <= 500 + 60
+
+
+def test_prompt_indica_imagen_visual():
+    prompt = list_designs_for_prompt()
+    assert "imagen_prompt" in prompt

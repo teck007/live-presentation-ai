@@ -106,6 +106,7 @@ export interface GenerateSlideResponse {
   codigo_matematica?: CodigoMatematica | null;
   image?: string;
   imagen_hashtag?: string;
+  imagen_prompt?: string;
   explanation?: string;
   concept?: string;
   example?: string;
@@ -234,6 +235,7 @@ export interface SlideWsSlideEvent {
   codigo_matematica?: CodigoMatematica | null;
   image?: string;
   imagen_hashtag?: string;
+  imagen_prompt?: string;
   explanation?: string;
   concept?: string;
   example?: string;
@@ -296,6 +298,7 @@ export interface SlideReplacedEvent {
   codigo_matematica?: CodigoMatematica | null;
   image?: string;
   imagen_hashtag?: string;
+  imagen_prompt?: string;
   explanation?: string;
   concept?: string;
   example?: string;
@@ -315,6 +318,16 @@ export interface SlideRemovedEvent {
   topicVersion: number;
 }
 
+// Progressive image: arrives after the text slide, patches it in place.
+export interface SlideImageUpdatedEvent {
+  type: "slide_image_updated";
+  turnId: string;
+  seq: number;
+  topicVersion: number;
+  image: string;
+  html?: string;
+}
+
 export type SlideWsEvent =
   | SlidePendingEvent
   | SlideWsSlideEvent
@@ -322,7 +335,8 @@ export type SlideWsEvent =
   | SlideKeptEvent
   | SlideErrorEvent
   | SlideReplacedEvent
-  | SlideRemovedEvent;
+  | SlideRemovedEvent
+  | SlideImageUpdatedEvent;
 
 export function isSlideWsEvent(event: ServerEvent): event is SlideWsEvent {
   return (
@@ -332,7 +346,8 @@ export function isSlideWsEvent(event: ServerEvent): event is SlideWsEvent {
     event.type === "slide_kept" ||
     event.type === "slide_error" ||
     event.type === "slide_replaced" ||
-    event.type === "slide_removed"
+    event.type === "slide_removed" ||
+    event.type === "slide_image_updated"
   );
 }
 

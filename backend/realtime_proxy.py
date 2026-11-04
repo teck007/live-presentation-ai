@@ -202,6 +202,9 @@ class RealtimeBridge:
         self.seen_turnIds: set[str] = set()
         self.pending_tasks: dict[str, asyncio.Task] = {}
         self.slide_semaphore = asyncio.Semaphore(2)
+        # Semáforo propio de imágenes (vivo progresivo): no compite con slides.
+        self.image_semaphore = asyncio.Semaphore(3)
+        self.image_tasks: set[asyncio.Task] = set()
         self.current_topic_version = 1
         self.current_topic = ""
         self.current_keywords: list[str] = []
@@ -735,7 +738,9 @@ class RealtimeBridge:
                     "code_tipo": str(slide.get("code_tipo") or ""),
                     "code_titulo": str(slide.get("code_titulo") or ""),
                     "codigo_matematica": cm,
+                    "image": str(slide.get("image") or ""),
                     "imagen_hashtag": str(slide.get("imagen_hashtag") or ""),
+                    "imagen_prompt": str(slide.get("imagen_prompt") or ""),
                     "explanation": str(slide.get("explanation") or ""),
                     "concept": str(slide.get("concept") or ""),
                     "example": str(slide.get("example") or ""),
@@ -748,6 +753,28 @@ class RealtimeBridge:
                     "palette": self.presentation_palette,
                 }
             )
+            # Vivo progresivo: texto ya emitido; la imagen llega después por
+            # patch sin bloquear. Fail-open: si no corresponde, nada se crea.
+            try:
+                from backend.presentation_api.utils.slide_designs import (
+                    should_generate_image as _should_gen,
+                )
+
+                if _should_gen(layout, slide.get("imagen_prompt")):
+                    img_task = asyncio.create_task(
+                        self._run_image_task(
+                            turn_id, seq, version,
+                            str(slide.get("title") or ""),
+                            str(slide.get("imagen_prompt") or ""),
+                            str(slide.get("imagen_hashtag") or ""),
+                            dict(slide) if isinstance(slide, dict) else {},
+                            is_opening,
+                        )
+                    )
+                    self.image_tasks.add(img_task)
+                    img_task.add_done_callback(self.image_tasks.discard)
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 self.last_layout = layout
                 summary_text = str(slide.get("texto") or slide.get("text") or "")
@@ -757,6 +784,62 @@ class RealtimeBridge:
                 }
             except Exception:  # noqa: BLE001
                 pass
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _run_image_task(
+        self,
+        turn_id: str,
+        seq: int,
+        version: int,
+        titulo: str,
+        imagen_prompt: str,
+        tags: str,
+        slide: dict,
+        is_opening: bool = False,
+    ) -> None:
+        """Genera la imagen en segundo plano y emite slide_image_updated.
+
+        Nunca bloquea el vivo: fail-open a placeholder si falla. Antes de
+        emitir chequea que la versión siga vigente (aborta si stale).
+        """
+        try:
+            async with self.image_semaphore:
+                from backend.presentation_api.utils.image_generation import (
+                    generate_image,
+                )
+                from backend.presentation_api.utils.slide_designs import (
+                    build_fast_prompt,
+                    render_slide_html,
+                )
+
+                url = await generate_image(build_fast_prompt(titulo, imagen_prompt, tags))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            return
+        if not url or version != self.current_topic_version:
+            return
+        try:
+            html_snippet = ""
+            try:
+                patched = dict(slide)
+                patched["image"] = url
+                html_snippet = render_slide_html(
+                    patched, self.presentation_palette, is_opening=is_opening
+                )
+            except Exception:  # noqa: BLE001
+                html_snippet = ""
+            await self.send_front(
+                {
+                    "type": "slide_image_updated",
+                    "turnId": turn_id,
+                    "seq": seq,
+                    "topicVersion": version,
+                    "image": url,
+                    "html": html_snippet,
+                }
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -772,9 +855,15 @@ class RealtimeBridge:
         for task in list(self.pending_tasks.values()):
             if not task.done():
                 task.cancel()
+        for task in list(self.image_tasks):
+            if not task.done():
+                task.cancel()
 
     async def cancel_slide_tasks(self) -> None:
         for task in list(self.pending_tasks.values()):
+            if not task.done():
+                task.cancel()
+        for task in list(self.image_tasks):
             if not task.done():
                 task.cancel()
         if self.pending_tasks:
@@ -1120,6 +1209,9 @@ class RealtimeBridge:
                 if task and not task.done():
                     task.cancel()
             for task in list(self.pending_tasks.values()):
+                if not task.done():
+                    task.cancel()
+            for task in list(self.image_tasks):
                 if not task.done():
                     task.cancel()
             # Cierra upstream sin endStream ruidoso si ya estaba en pausa.

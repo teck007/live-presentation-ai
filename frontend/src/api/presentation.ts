@@ -100,6 +100,7 @@ function normalizeResponse(data: unknown): GenerateSlideResponse {
     codigo_matematica: normalizeCodigo(d.codigo_matematica),
     image: typeof d.image === "string" ? d.image : undefined,
     imagen_hashtag: typeof d.imagen_hashtag === "string" ? d.imagen_hashtag : undefined,
+    imagen_prompt: typeof d.imagen_prompt === "string" ? d.imagen_prompt : undefined,
     explanation: strField(d.explanation ?? d.texto, 900),
     concept: strField(d.concept, 200),
     example: strField(d.example, 400),

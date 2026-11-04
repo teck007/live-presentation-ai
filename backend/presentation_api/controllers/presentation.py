@@ -1,7 +1,10 @@
 """Controller presentation: genera slides JSON desde transcripción + LLM."""
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.presentation_api.utils.image_generation import generate_image
 from backend.presentation_api.utils.llm_client import (
     VALID_LAYOUTS,
     generate_slide,
@@ -9,8 +12,10 @@ from backend.presentation_api.utils.llm_client import (
 )
 from backend.presentation_api.utils.palettes import resolve_palette
 from backend.presentation_api.utils.slide_designs import (
+    build_fast_prompt,
     list_designs,
     render_slide_html,
+    should_generate_image,
     validate_slide,
 )
 from backend.presentation_api.utils.topic_cleaner import analyze_topic
@@ -46,6 +51,7 @@ class GenerateSlideResponse(BaseModel):
     codigo_matematica: dict | None = None
     image: str = ""
     imagen_hashtag: str = ""
+    imagen_prompt: str = ""
     explanation: str = ""
     concept: str = ""
     example: str = ""
@@ -72,7 +78,7 @@ def layouts():
 
 
 @router.post("/generate", response_model=GenerateSlideResponse)
-def generate(req: GenerateSlideRequest):
+async def generate(req: GenerateSlideRequest):
     transcript = req.transcript.strip()
     if not transcript:
         raise HTTPException(status_code=400, detail="Transcript vacío.")
@@ -107,6 +113,18 @@ def generate(req: GenerateSlideRequest):
     v = validate_slide(slide, is_opening=is_open)
     layout = v.get("layout") if v.get("layout") in VALID_LAYOUTS else "title_text"
     html_snippet = render_slide_html(v, palette, is_opening=is_open)
+    # Vivo efímero: si corresponde imagen, intento corto fail-open y re-render.
+    if should_generate_image(layout, v.get("imagen_prompt")):
+        try:
+            fast_prompt = build_fast_prompt(
+                v.get("title"), v.get("imagen_prompt"), v.get("imagen_hashtag")
+            )
+            url = await asyncio.wait_for(generate_image(fast_prompt), timeout=20.0)
+            if url:
+                v["image"] = url
+                html_snippet = render_slide_html(v, palette, is_opening=is_open)
+        except Exception:  # noqa: BLE001 - placeholder inmediato si falla
+            pass
     cm = v.get("codigo_matematica") if isinstance(v.get("codigo_matematica"), dict) else None
     return GenerateSlideResponse(
         layout=layout,
@@ -127,6 +145,7 @@ def generate(req: GenerateSlideRequest):
         codigo_matematica=cm,
         image=str(v.get("image") or ""),
         imagen_hashtag=str(v.get("imagen_hashtag") or ""),
+        imagen_prompt=str(v.get("imagen_prompt") or ""),
         explanation=str(v.get("explanation") or "")[:900],
         concept=str(v.get("concept") or ""),
         example=str(v.get("example") or ""),

@@ -345,7 +345,8 @@ def test_ws_event_contract_pending_terminal_shapes():
 
 
 def test_ws_slide_text_only_no_media():
-    """Text-only: el evento slide no lleva payload de imagen/media."""
+    """Contrato progresivo: el slide sale inmediato con texto; la imagen es
+    opcional y llega después por slide_image_updated (nunca bloquea)."""
 
     async def scenario():
         bridge, front = _make_bridge()
@@ -365,8 +366,13 @@ def test_ws_slide_text_only_no_media():
         slides = [m for m in front.sent if m.get("type") == "slide"]
         assert len(slides) == 1
         payload = slides[0]
-        for banned in ("image", "imageUrl", "image_url", "media", "mediaUrl"):
-            assert banned not in payload, f"slice text-only no admite {banned}"
+        for banned in ("imageUrl", "image_url", "media", "mediaUrl"):
+            assert banned not in payload, f"contrato progresivo no admite {banned}"
+        # image/imagen_prompt son opcionales ("" o https), nunca otras formas.
+        for key in ("image", "imagen_prompt"):
+            assert key in payload
+            assert isinstance(payload[key], str)
+            assert payload[key] == "" or not payload[key].startswith("data:")
         assert payload["title"]
         await bridge.cancel_slide_tasks()
 
@@ -1161,6 +1167,185 @@ def test_speech_complete_after_windows_empty_tail_filtered():
         filtered = [m for m in front.sent if m.get("type") == "slide_filtered"]
         assert len(filtered) == 1
         assert filtered[0]["turnId"] == "tnotail"
+        await bridge.cancel_slide_tasks()
+
+    asyncio.run(scenario())
+
+
+# --- Imágenes generativas progresivas (vivo efímero, sin R2) ---
+
+def _img_response(url: str = "https://img.example.com/a.webp") -> FakeResponse:
+    return FakeResponse(200, {"data": [{"url": url}]})
+
+
+def test_generate_image_apagada_sin_request(monkeypatch):
+    """Flag off -> None sin tocar la red."""
+    import httpx as _httpx
+
+    from backend.presentation_api.utils import image_generation as img_mod
+
+    monkeypatch.delenv("ENABLE_IMAGE_GENERATION", raising=False)
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    with patch.object(_httpx.AsyncClient, "post", new=AsyncMock()) as mock_post:
+        assert asyncio.run(img_mod.generate_image("a cat")) is None
+        assert mock_post.await_count == 0
+
+
+def test_generate_image_sin_key_o_prompt_vacio(monkeypatch):
+    """Sin key o con prompt vacío -> None sin request."""
+    import httpx as _httpx
+
+    from backend.presentation_api.utils import image_generation as img_mod
+
+    monkeypatch.setenv("ENABLE_IMAGE_GENERATION", "true")
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with patch.object(_httpx.AsyncClient, "post", new=AsyncMock()) as mock_post:
+        assert asyncio.run(img_mod.generate_image("a cat")) is None
+        assert mock_post.await_count == 0
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    with patch.object(_httpx.AsyncClient, "post", new=AsyncMock()) as mock_post:
+        assert asyncio.run(img_mod.generate_image("   ")) is None
+        assert mock_post.await_count == 0
+
+
+def test_generate_image_payload_rapido_y_url(monkeypatch):
+    """Payload veloz (low/url/webp, 1 intento) y devuelve la URL https."""
+    import httpx as _httpx
+
+    from backend.presentation_api.utils import image_generation as img_mod
+
+    monkeypatch.setenv("ENABLE_IMAGE_GENERATION", "true")
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    mock_post = AsyncMock(return_value=_img_response())
+    with patch.object(_httpx.AsyncClient, "post", mock_post):
+        url = asyncio.run(img_mod.generate_image("a red bicycle"))
+    assert url == "https://img.example.com/a.webp"
+    _, kwargs = mock_post.call_args
+    body = kwargs["json"]
+    assert kwargs.get("headers", {}).get("Authorization") == "Bearer LLM_test"
+    assert "api.meta.ai/v1/images/generations" in mock_post.call_args[0][0]
+    assert body["model"] == "muse-image-1.0"
+    assert body["n"] == 1
+    assert body["response_format"] == "url"
+    assert body["reasoning_strength"] == "low"
+    assert body.get("stream") is False
+
+
+def test_generate_image_timeout_y_b64_a_none(monkeypatch):
+    """Timeout o respuesta b64 (fase vivo-url-only) -> None, nunca lanza."""
+    import httpx as _httpx
+
+    from backend.presentation_api.utils import image_generation as img_mod
+
+    monkeypatch.setenv("ENABLE_IMAGE_GENERATION", "true")
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+
+    def _boom(*args, **kwargs):
+        raise _httpx.TimeoutException("slow")
+
+    with patch.object(_httpx.AsyncClient, "post", side_effect=_boom):
+        assert asyncio.run(img_mod.generate_image("a cat")) is None
+    b64 = FakeResponse(200, {"data": [{"b64_json": "AAAA"}]})
+    with patch.object(_httpx.AsyncClient, "post", new=AsyncMock(return_value=b64)):
+        assert asyncio.run(img_mod.generate_image("a cat")) is None
+    err = FakeResponse(400, {"error": "bad"}, text='{"error":"bad"}')
+    with patch.object(_httpx.AsyncClient, "post", new=AsyncMock(return_value=err)):
+        assert asyncio.run(img_mod.generate_image("a cat")) is None
+
+
+def test_generate_image_cache_no_regenera(monkeypatch):
+    """Mismo prompt normalizado -> segunda llamada sale del cache LRU."""
+    import httpx as _httpx
+
+    from backend.presentation_api.utils import image_generation as img_mod
+
+    monkeypatch.setenv("ENABLE_IMAGE_GENERATION", "true")
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    img_mod._cache.clear()
+    mock_post = AsyncMock(return_value=_img_response())
+    with patch.object(_httpx.AsyncClient, "post", mock_post):
+        first = asyncio.run(img_mod.generate_image("  A Red Bicycle "))
+        second = asyncio.run(img_mod.generate_image("a red bicycle"))
+    assert first == second == "https://img.example.com/a.webp"
+    assert mock_post.await_count == 1
+
+
+def test_ws_slide_progresivo_luego_image_updated():
+    """Slide de texto inmediato + slide_image_updated después, mismo seq."""
+
+    async def scenario():
+        bridge, front = _make_bridge()
+        from backend.presentation_api.utils import image_generation as img_mod
+        from backend.presentation_api.utils import llm_client as llm_mod
+
+        fake_slide = {"layout": "split_media", "title": "Bici", "text": "una bici roja",
+                      "bullets": [], "keywords": [], "relevant": True, "filtered": False,
+                      "imagen_prompt": "a red bicycle on a hill", "imagen_hashtag": "bicycle"}
+        with (
+            patch.object(llm_mod, "generate_slide", return_value=fake_slide),
+            patch.object(img_mod, "generate_image",
+                         new=AsyncMock(return_value="https://img.example.com/a.webp")),
+            patch("backend.realtime_proxy.is_relevant", return_value=True),
+        ):
+            await bridge.handle_speech_complete(_speech_complete("t-img"))
+            for task in list(bridge.pending_tasks.values()):
+                try:
+                    await asyncio.wait_for(task, timeout=2)
+                except Exception:
+                    pass
+            for task in list(bridge.image_tasks):
+                try:
+                    await asyncio.wait_for(task, timeout=2)
+                except Exception:
+                    pass
+        slides = [m for m in front.sent if m.get("type") == "slide"]
+        updates = [m for m in front.sent if m.get("type") == "slide_image_updated"]
+        assert len(slides) == 1
+        assert slides[0]["turnId"] == "t-img"
+        assert slides[0]["imagen_prompt"] == "a red bicycle on a hill"
+        assert len(updates) == 1
+        assert updates[0]["turnId"] == "t-img"
+        assert updates[0]["seq"] == slides[0]["seq"]
+        assert updates[0]["topicVersion"] == slides[0]["topicVersion"]
+        assert updates[0]["image"] == "https://img.example.com/a.webp"
+        # El texto salió antes que la imagen (progresivo, no bloqueante).
+        kinds = [m["type"] for m in front.sent
+                 if m.get("type") in ("slide", "slide_image_updated")]
+        assert kinds == ["slide", "slide_image_updated"]
+        await bridge.cancel_slide_tasks()
+
+    asyncio.run(scenario())
+
+
+def test_ws_image_stale_no_emite_update():
+    """Si la versión cambió antes de terminar la imagen, no se emite patch."""
+
+    async def scenario():
+        bridge, front = _make_bridge()
+        from backend.presentation_api.utils import image_generation as img_mod
+        from backend.presentation_api.utils import llm_client as llm_mod
+
+        started = asyncio.Event()
+
+        async def slow_image(prompt: str):
+            started.set()
+            await asyncio.sleep(0.5)
+            return "https://img.example.com/a.webp"
+
+        fake_slide = {"layout": "split_media", "title": "Bici", "text": "una bici roja",
+                      "bullets": [], "keywords": [], "relevant": True, "filtered": False,
+                      "imagen_prompt": "a red bicycle on a hill"}
+        with (
+            patch.object(llm_mod, "generate_slide", return_value=fake_slide),
+            patch.object(img_mod, "generate_image", side_effect=slow_image),
+            patch("backend.realtime_proxy.is_relevant", return_value=True),
+        ):
+            await bridge.handle_speech_complete(_speech_complete("t-stale-img"))
+            assert await asyncio.wait_for(started.wait(), timeout=2)
+            bridge.confirm_topic_version(bridge.current_topic_version + 1)
+            await asyncio.sleep(0.8)
+        updates = [m for m in front.sent if m.get("type") == "slide_image_updated"]
+        assert updates == []
         await bridge.cancel_slide_tasks()
 
     asyncio.run(scenario())

@@ -159,6 +159,7 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
         codigo_matematica: event.codigo_matematica,
         image: event.image,
         imagen_hashtag: event.imagen_hashtag,
+        imagen_prompt: event.imagen_prompt,
         explanation: event.explanation,
         concept: event.concept,
         example: event.example,
@@ -186,6 +187,8 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
    * - `slide_replaced`: como `slide`, pero elimina al pintar el slide anterior del turno.
    * - `slide_removed`: elimina el slide del turno.
    * - `slide_error`: pinta el error.
+   * - `slide_image_updated`: parchea image (+html) del slide `${turnId}-${seq}`
+   *   sin reordenar ni mover el slide activo.
    */
   function handleSlideEvent(event: SlideWsEvent) {
     // El backend es la autoridad de la versión: se adopta la mayor vista.
@@ -267,6 +270,20 @@ export function useLivePresentation(options?: { wsEnabled?: boolean; topicVersio
       case "slide_error": {
         trackTerminal(event.turnId);
         error.value = event.message || "No se pudo generar el slide.";
+        break;
+      }
+      case "slide_image_updated": {
+        // Progressive patch: version guard + patch in place, no reorder,
+        // no activeIndex change (length unchanged, so no auto-jump).
+        if (event.topicVersion !== currentTopicVersion.value) break;
+        if (typeof event.image !== "string" || !event.image.startsWith("https://")) break;
+        const id = `${event.turnId}-${event.seq}`;
+        const target = slides.value.find((s) => s.id === id);
+        if (!target) break;
+        target.image = event.image;
+        if (typeof event.html === "string" && event.html.trim()) {
+          target.html = event.html;
+        }
         break;
       }
     }

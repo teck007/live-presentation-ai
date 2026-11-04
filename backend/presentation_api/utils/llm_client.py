@@ -67,6 +67,7 @@ SLIDE_SYSTEM_PROMPT = (
     "\"texto\": \"explicacion desarrollada en espanol, 3-5 frases completas segun audiencia, "
     "prioriza la idea dominante sin muro de texto\", "
     "\"imagen_hashtag\": \"tags en INGLES separados por comas para imagen futura o null\", "
+    "\"imagen_prompt\": \"frase visual en INGLES (1 frase, max 300 chars) solo si layout visual o null\", "
     "\"conceptos\": [{\"subtitulo\": \"...\", \"icono\": \"<idea|libro|codigo|grafico|lupa|lista|check|alerta|estrella|chat>\", "
     "\"texto\": \"...\", \"codigo_matematica\": null|{\"tipo\": \"codigo|matematica\", \"titulo\": \"Ejemplo|Ejercicio\", \"contenido\": \"...\"}}] "
     "maximo 4 o null, "
@@ -101,6 +102,8 @@ SLIDE_SYSTEM_PROMPT = (
     "Rellena SOLO lo que el tema pida; el resto va en null (nunca strings vacios inventados). "
     "Maximo 2 bloques de apoyo ademas de titulo+texto (conceptos, listado, codigo_matematica, imagen_hashtag); "
     "si hay mas, deja los 2 mas importantes y el resto en null. "
+    "imagen_prompt solo se llena si el layout es visual (split_media o hero_cover); "
+    "en cualquier otro layout va en null. imagen_hashtag queda como fallback. "
     "Regla anti-muro: prioriza la idea dominante en texto; los detalles van a conceptos o listado. "
     "Regla anti-invencion: no inventes numeros ni codigo; "
     "icono SOLO de la lista cerrada (idea, libro, codigo, grafico, lupa, lista, check, alerta, estrella, chat); "
@@ -186,6 +189,7 @@ def _fallback_slide(transcript: str, keywords: list[str] | None, topic: str = ""
         "codigo_matematica": None,
         "image": "",
         "imagen_hashtag": "",
+        "imagen_prompt": "",
         "concept": "",
         "explanation": "",
         "example": "",
@@ -278,6 +282,7 @@ def generate_slide(
                 "codigo_matematica": None,
                 "image": "",
                 "imagen_hashtag": "",
+                "imagen_prompt": "",
                 "concept": "",
                 "explanation": "",
                 "example": "",
@@ -320,6 +325,7 @@ def generate_slide(
                 "conceptos": data.get("conceptos"),
                 "codigo_matematica": data.get("codigo_matematica"),
                 "imagen_hashtag": data.get("imagen_hashtag"),
+                "imagen_prompt": data.get("imagen_prompt"),
                 "keywords": out_kws,
                 "kicker": data.get("kicker"),
                 "subtitle": data.get("subtitle"),

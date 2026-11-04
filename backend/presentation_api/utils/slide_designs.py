@@ -184,6 +184,15 @@ SLIDE_DESIGNS = {
 
 VALID_LAYOUTS = tuple(SLIDE_DESIGNS.keys())
 
+# Layouts visuales: únicos donde corresponde generar imagen (vivo efímero).
+VISUAL_LAYOUTS = frozenset({"split_media", "hero_cover"})
+for _lid, _spec in SLIDE_DESIGNS.items():
+    _spec.setdefault("supports_image", _lid in VISUAL_LAYOUTS)
+del _lid, _spec
+
+# Sufijo fijo del prompt rápido de imagen (velocidad > precisión).
+FAST_IMAGE_SUFFIX = "flat vector illustration, no text, simple background"
+
 # Compat aliases resolve to their canonical layout for rendering.
 ALIAS_MAP = {
     "title_bullets": "bullets_flex",
@@ -240,6 +249,36 @@ def _esc_hashtag(value: object) -> str:
         return ""
     cleaned = html.escape(raw, quote=True)[:200]
     return cleaned
+
+
+def _esc_imagen_prompt(value: object) -> str:
+    # Visual phrase EN, single sentence; escaped like the hashtag fallback.
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return html.escape(raw, quote=True)[:300]
+
+
+def supports_image_layout(layout: object) -> bool:
+    """True si el layout (o su alias canónico) admite imagen generativa."""
+    canonical = ALIAS_MAP.get(str(layout or ""), str(layout or ""))
+    return canonical in VISUAL_LAYOUTS
+
+
+def should_generate_image(layout: object, imagen_prompt: object) -> bool:
+    """True si el layout es visual y hay prompt visual no vacío."""
+    return supports_image_layout(layout) and bool(str(imagen_prompt or "").strip())
+
+
+def build_fast_prompt(titulo: object, imagen_prompt: object, tags: object) -> str:
+    """Prompt rápido EN para imagen: partes truncadas + sufijo fijo."""
+    parts = [
+        str(titulo or "").strip()[:80],
+        str(imagen_prompt or "").strip()[:300],
+        str(tags or "").strip()[:200],
+    ]
+    base = ", ".join(p for p in parts if p)[:500]
+    return f"{base}, {FAST_IMAGE_SUFFIX}" if base else FAST_IMAGE_SUFFIX
 
 
 def _sanitize_codigo_matematica(value: object) -> dict | None:
@@ -302,9 +341,10 @@ def list_designs_for_prompt() -> str:
     parts = []
     for lid, spec in SLIDE_DESIGNS.items():
         fields = ",".join(spec["fields"])
+        img_hint = " | imagen: si (imagen_prompt EN 1 frase)" if spec.get("supports_image") else " | imagen: no (imagen_prompt null)"
         parts.append(
             f"{lid}: {spec['description_for_llm']} | fields: {fields} "
-            f"| items: {spec['min_items']}-{spec['max_items']}"
+            f"| items: {spec['min_items']}-{spec['max_items']}{img_hint}"
         )
     return "; ".join(parts)
 
@@ -321,6 +361,7 @@ def list_designs() -> list:
             "max_items": spec["max_items"],
             "fields": list(spec["fields"]),
             "grid_rule": dict(GRID_RULE),
+            "supports_image": bool(spec.get("supports_image", False)),
         }
         for lid, spec in SLIDE_DESIGNS.items()
     ]
@@ -453,6 +494,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     content_type = _esc(data.get("content_type") or "", 40) or ""
     layout_reason = _esc(data.get("layout_reason") or "", 200) or ""
     imagen_hashtag = _esc_hashtag(data.get("imagen_hashtag"))
+    imagen_prompt = _esc_imagen_prompt(data.get("imagen_prompt"))
     # Footer codigo_matematica: sanitize dict, keep code string for compat.
     codigo_block = _sanitize_codigo_matematica(data.get("codigo_matematica"))
     if codigo_block is None and str(data.get("code") or "").strip():
@@ -486,12 +528,13 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     def _has_code() -> bool:
         return bool(code.strip()) or any(isinstance(c, dict) and str(c.get("code") or "").strip() for c in cards)
     def _has_img() -> bool:
-        return bool(imagen_hashtag.strip() or image.strip())
+        return bool(imagen_hashtag.strip() or imagen_prompt.strip() or image.strip())
     support = sum([_has_cards(), _has_bul(), _has_code(), _has_img()])
     if support > 2:
         # Drop imagen first.
         if _has_img():
             imagen_hashtag = ""
+            imagen_prompt = ""
             image = ""
             support -= 1
         if support > 2 and _has_code():
@@ -521,7 +564,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
             "has_concept_code": has_concept_code,
             "n_listado": len(bullets),
             "has_code": bool(code.strip()),
-            "has_image": bool(imagen_hashtag.strip() or image.strip()),
+            "has_image": bool(imagen_hashtag.strip() or imagen_prompt.strip() or image.strip()),
             "has_texto": bool(text.strip() or explanation.strip()),
         }
         # Ambiguous title_text with heavy blocks also derives; pure title_text stays.
@@ -537,7 +580,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     # Hero gate: only opening cover or first slide after main topic change.
     if layout == "hero_cover" and not is_opening:
         _t = str(data.get("text") or data.get("texto") or "").strip()
-        _img = str(data.get("image") or "").strip() or imagen_hashtag.strip()
+        _img = str(data.get("image") or "").strip() or imagen_hashtag.strip() or imagen_prompt.strip()
         _bul = data.get("bullets") if isinstance(data.get("bullets"), list) else []
         if not _bul and isinstance(data.get("listado"), list):
             _bul = data.get("listado")
@@ -563,7 +606,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     elif layout in ("split_media", "text_image"):
         has_text = bool(text.strip() or explanation.strip())
         has_bullets = len(bullets) > 0
-        has_image = bool(image.strip() or imagen_hashtag.strip())
+        has_image = bool(image.strip() or imagen_hashtag.strip() or imagen_prompt.strip())
         if not (has_text or has_bullets or has_image):
             layout = "title_text"
     elif layout == "definition_guided":
@@ -584,6 +627,9 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     elif layout == "stat_hero":
         if len(stats) < 1:
             layout = "title_text"
+    # Imagen generativa solo en layouts visuales: resto nulifica el prompt.
+    if not supports_image_layout(layout):
+        imagen_prompt = ""
     # Spanish aliases (compat): mirror English internal with Spanish keys.
     conceptos_es = []
     for c in cards:
@@ -619,6 +665,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
         "codigo_matematica": codigo_block,
         "image": image,
         "imagen_hashtag": imagen_hashtag,
+        "imagen_prompt": imagen_prompt,
         "concept": concept,
         "explanation": explanation,
         "example": example,
@@ -763,9 +810,15 @@ def _code_footer_html(s: dict) -> str:
     return f'<div class="code-footer">{label}<pre class="code"><code>{content}</code></pre></div>'
 
 
-def _media_placeholder_html(s: dict) -> str:
-    # Placeholder-only for split_media (keeps text-only contract + existing tests).
-    # _is_safe_image stays for future real-image use and hero covers.
+def _media_html(s: dict) -> str:
+    # Imagen real si hay URL https segura; sino placeholder con data-tags.
+    image = str(s.get("image") or "").strip()
+    if _is_safe_image(image):
+        alt = str(s.get("title") or s.get("titulo") or "Imagen ilustrativa")
+        return (
+            f'<div class="media"><img class="img" src="{image}" alt="{alt}" '
+            f'loading="lazy" fetchpriority="high" /></div>'
+        )
     tags = str(s.get("imagen_hashtag") or "").strip()
     if tags:
         return (
@@ -773,6 +826,10 @@ def _media_placeholder_html(s: dict) -> str:
             f'aria-hidden="true"><span class="dot"></span></div></div>'
         )
     return '<div class="media"><div class="placeholder" aria-hidden="true"><span class="dot"></span></div></div>'
+
+
+# Compat: nombre anterior del helper de media.
+_media_placeholder_html = _media_html
 
 
 def _composed_extras(s: dict, exclude: set | None = None) -> str:
@@ -786,8 +843,8 @@ def _composed_extras(s: dict, exclude: set | None = None) -> str:
         parts.append(_bullets_html([b for b in s.get("bullets", []) if isinstance(b, str)]))
     if "codigo" not in exclude and str(s.get("code") or "").strip():
         parts.append(_code_footer_html(s))
-    if "media" not in exclude and (str(s.get("imagen_hashtag") or "").strip() or str(s.get("image") or "").strip()):
-        parts.append(_media_placeholder_html(s))
+    if "media" not in exclude and (str(s.get("imagen_hashtag") or "").strip() or str(s.get("imagen_prompt") or "").strip() or str(s.get("image") or "").strip()):
+        parts.append(_media_html(s))
     return "".join(p for p in parts if p)
 
 
@@ -837,8 +894,8 @@ def _cards_flex(s: dict) -> str:
     header = _header_html(s)
     conceptos = _conceptos_html(s.get("cards", []))
     extras = _code_footer_html(s) + (
-        _media_placeholder_html(s)
-        if str(s.get("imagen_hashtag") or "").strip() or str(s.get("image") or "").strip()
+        _media_html(s)
+        if str(s.get("imagen_hashtag") or "").strip() or str(s.get("imagen_prompt") or "").strip() or str(s.get("image") or "").strip()
         else ""
     )
     return f"{header}{conceptos}{extras}"
@@ -867,7 +924,7 @@ def _split_media(s: dict) -> str:
     bullets = _bullets_html(s.get("bullets", [])[:3])
     conceptos = _conceptos_html(s.get("cards", [])) if s.get("cards") else ""
     code = _code_footer_html(s)
-    media = _media_placeholder_html(s)
+    media = _media_html(s)
     return (
         f'<div class="split"><div>{kicker}<h2 class="h-slide">{s["title"]}</h2>'
         f'{text}{explanation}{bullets}{conceptos}{code}</div>'
@@ -912,8 +969,8 @@ def _checklist_flex(s: dict) -> str:
     if s.get("cards"):
         extras += _conceptos_html(s.get("cards", []))
     extras += _code_footer_html(s)
-    if str(s.get("imagen_hashtag") or "").strip() or str(s.get("image") or "").strip():
-        extras += _media_placeholder_html(s)
+    if str(s.get("imagen_hashtag") or "").strip() or str(s.get("imagen_prompt") or "").strip() or str(s.get("image") or "").strip():
+        extras += _media_html(s)
     return f"{header}{checks}{extras}"
 
 
@@ -958,8 +1015,8 @@ def _bullets_flex(s: dict) -> str:
     bullets = _bullets_html(s.get("bullets", []))
     extras = _conceptos_html(s.get("cards", [])) if s.get("cards") else ""
     extras += _code_footer_html(s)
-    if str(s.get("imagen_hashtag") or "").strip() or str(s.get("image") or "").strip():
-        extras += _media_placeholder_html(s)
+    if str(s.get("imagen_hashtag") or "").strip() or str(s.get("imagen_prompt") or "").strip() or str(s.get("image") or "").strip():
+        extras += _media_html(s)
     return f"{header}{bullets}{extras}"
 
 
