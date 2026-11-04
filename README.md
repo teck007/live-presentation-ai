@@ -1,113 +1,114 @@
-# Presentaciones en vivo con transcripción e IA
+> Built for the Meta Hackathon 2026.
 
-Para el profesor que expone en clase y necesita apoyo visual sin diseñar slides.
-Habla al micrófono y la aplicación transcribe en tiempo real, filtra lo irrelevante y genera slides acordes al tema automáticamente.
+# Live Presentation — Speak. Your slides appear.
 
-## Flujo principal (`/live`)
+Live Presentation lets anyone present any topic without preparing a deck beforehand. Just outline what you want to talk about, set your topic and audience, and start speaking. The platform listens in real time, understands what's relevant, and generates your slides and supporting images as you talk — so you can focus on presenting, not on designing slides.
 
-1. Abrir `/live` e iniciar sesión (trial de 24 h desde el primer uso).
-2. Definir **tema** (ej. Fotosíntesis) y **audiencia** (niños / estudiantes / general / profesionales / expertos).
-3. Pulsar **Iniciar en vivo**: se genera la portada `hero_cover` (seq 0) sin bloquear el micrófono.
-4. Hablar: el subtítulo parcial aparece en vivo y los slides se pintan solos a medida que el contenido es relevante.
-5. Lo fuera de tema se filtra sin pintar. Las imágenes generativas llegan de forma progresiva, sin bloquear el texto.
-6. Fallback por lotes: si no hay micrófono, grabar audio y pulsar **Transcribir**.
+## Main flow (`/live`)
 
-## Arquitectura
+1. Open `/live` and sign in (24 h trial from first use).
+2. Set your **topic** (e.g. Photosynthesis) and **audience** (kids / students / general / professionals / experts).
+3. Press **Go live**: the `hero_cover` cover (seq 0) is generated without blocking the mic.
+4. Speak: partial subtitles appear live and slides paint themselves as relevant content arrives.
+5. Off-topic content is filtered out without painting. Generative images arrive progressively, without blocking the text.
+6. Batch fallback: if there is no mic, record audio and press **Transcribe**.
 
-- **WS productor único `/ws/transcribe`**: el frontend envía PCM 24 kHz; el backend lo reenvía a Meta realtime y emite eventos enriquecidos (`topic`, `keywords`, `cleaned`) más eventos `slide_*`. Dedupe por `turnId`, orden por `seq`, descarte stale por `topicVersion`.
-- **Fallback POST `/api/transcribe`**: `multipart/form-data` (máx. 32 MB), conversión con ffmpeg a WAV mono 16-bit 24 kHz. Regla single-producer: si el WS reclama el `turnId`, el POST no compite.
-- **Gate Jev fail-open**: cada ventana de voz se evalúa con el modelo de decisiones (`typesafe/jev-1.13` vía OpenRouter). Si el gate falla o expira (`JEV_TIMEOUT_MS`), el flujo continúa sin bloquear.
-- **Ventanas de evaluación**: ventana de voz acumulada (`SLIDE_WINDOW_S`), objetivo de palabras y límites de voz/contenido configurables; fusión con contexto de transcripts (`SLIDE_CONTEXT_CHARS`).
-- **Slides**: 21 layouts sobre 13 componentes Vue (`slideLayouts.ts`, `frontend/src/types.ts`); diseño de servidor en `slide_designs.py` + ruta de componentes en `SlideCanvas`. Concurrencia limitada: 2 slides / 3 imágenes en paralelo.
-- **Sesiones en memoria**: TTL 2 h con reanudación (Continuar / Nueva). Bloqueo de hilo evitado con `asyncio.to_thread` para LLM, Jev, ffmpeg, auth Clerk (incluido handler WS) y Resend.
-- **Auth + trial**: Clerk (JWT por request) y trial persistido en JSON local. Sin `VITE_*` con secretos: `MODEL_API_KEY` y demás keys solo existen en backend.
+## Architecture
 
-## Rutas frontend
+- **Single-producer WS `/ws/transcribe`**: the frontend sends 24 kHz PCM; the backend forwards it to Meta realtime and emits enriched events (`topic`, `keywords`, `cleaned`) plus `slide_*` events. Dedupe by `turnId`, ordering by `seq`, stale discard by `topicVersion`.
+- **POST `/api/transcribe` fallback**: `multipart/form-data` (max 32 MB), conversion with ffmpeg to mono 16-bit 24 kHz WAV. Single-producer rule: if the WS claims the `turnId`, the POST does not compete.
+- **Fail-open Jev gate**: each voice window is evaluated with the decision model (`typesafe/jev-1.13` via OpenRouter). If the gate fails or times out (`JEV_TIMEOUT_MS`), the flow continues without blocking.
+- **Evaluation windows**: accumulated voice window (`SLIDE_WINDOW_S`), word target and configurable voice/content limits; fusion with transcript context (`SLIDE_CONTEXT_CHARS`).
+- **Slides**: 21 layouts over 13 Vue components (`slideLayouts.ts`, `frontend/src/types.ts`); server-side design in `slide_designs.py` + component route in `SlideCanvas`. Bounded concurrency: 2 slides / 3 images in parallel.
+- **In-memory sessions**: 2 h TTL with resume (Continue / New). Thread blocking avoided with `asyncio.to_thread` for LLM, Jev, ffmpeg, Clerk auth (including the WS handler) and Resend.
+- **Auth + trial**: Clerk (JWT per request) and trial persisted in local JSON. No secrets in `VITE_*`: `MODEL_API_KEY` and other keys only exist in the backend.
 
-| Ruta | Descripción |
+## Frontend routes
+
+| Route | Description |
 |---|---|
-| `/` | Landing pública |
-| `/live` | Estudio en vivo (requiere login + trial activo; sin Clerk configurado abre en dev) |
-| `/sign-in` | Inicio de sesión (Clerk) |
-| `/sign-up` | Registro (Clerk) |
-| `/trial-expired` | Fin del trial (sin guard, evita loops) |
+| `/` | Public landing |
+| `/live` | Live studio (requires login + active trial; opens in dev without Clerk configured) |
+| `/sign-in` | Sign in (Clerk) |
+| `/sign-up` | Sign up (Clerk) |
+| `/trial-expired` | Trial end (no guard, avoids loops) |
 
-Shell: `App.vue` es `router-view` + navbar persistente. Tema claro/oscuro (default del SO + persistencia) e i18n ES/EN.
+Shell: `App.vue` is `router-view` + persistent navbar. Light/dark theme (OS default + persistence) and ES/EN i18n.
 
 ## Endpoints
 
-| Método | Ruta | Descripción |
+| Method | Route | Description |
 |---|---|---|
-| WS | `/ws/transcribe` | Transcripción realtime + eventos `slide_*` (requiere JWT si hay auth) |
-| POST | `/api/transcribe` | Transcripción de archivo (`multipart/form-data`, máx. 32 MB) |
-| POST | `/api/presentations/generate` | Genera un slide desde `{transcript, topic, keywords}` |
-| GET | `/api/presentations/live-session` | Estado de sesión guardada (resume) |
-| GET | `/api/presentations/live-session/{id}/slides` | Snapshot de slides para reanudar |
-| DELETE | `/api/presentations/live-session/{id}` | Descarta la sesión guardada |
-| GET | `/api/presentations/layouts` | Catálogo de los 21 layouts |
-| GET | `/api/trial/status` | Estado del trial (requiere JWT) |
-| POST | `/api/contact` | Formulario de contacto (Resend) |
+| WS | `/ws/transcribe` | Realtime transcription + `slide_*` events (requires JWT when auth is on) |
+| POST | `/api/transcribe` | File transcription (`multipart/form-data`, max 32 MB) |
+| POST | `/api/presentations/generate` | Generates one slide from `{transcript, topic, keywords}` |
+| GET | `/api/presentations/live-session` | Saved session state (resume) |
+| GET | `/api/presentations/live-session/{id}/slides` | Slide snapshot for resume |
+| DELETE | `/api/presentations/live-session/{id}` | Discards the saved session |
+| GET | `/api/presentations/layouts` | Catalog of the 21 layouts |
+| GET | `/api/trial/status` | Trial status (requires JWT) |
+| POST | `/api/contact` | Contact form (Resend) |
 | GET | `/health`, `/api/presentations/health`, `/api/credits/health`, `/api/contact/health` | Health checks |
 
-## Requisitos
+## Requirements
 
-- Python 3.10+, Node.js 18+, ffmpeg (obligatorio para convertir audio a WAV 24 kHz):
+- Python 3.10+, Node.js 18+, ffmpeg (required to convert audio to 24 kHz WAV):
   - macOS: `brew install ffmpeg` · Ubuntu/Debian: `sudo apt install ffmpeg`
-- Keys: Meta Muse (`MODEL_API_KEY`, formato `LLM_...`), OpenRouter (`OPENROUTER_API_KEY`, gate Jev), Clerk (backend + frontend), Resend (contacto, opcional en dev).
+- Keys: Meta Muse (`MODEL_API_KEY`, `LLM_...` format), OpenRouter (`OPENROUTER_API_KEY`, Jev gate), Clerk (backend + frontend), Resend (contact, optional in dev).
 
-## Instalación
+## Installation
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 pip install pytest
-cp .env.example .env   # completar MODEL_API_KEY y demás keys
+cp .env.example .env   # fill in MODEL_API_KEY and other keys
 ```
 
 ```bash
 cd frontend
-cp .env.example .env   # ajustar VITE_API_BASE_URL si aplica
+cp .env.example .env   # adjust VITE_API_BASE_URL if needed
 npm install
 ```
 
-## Cómo correrlo
+## Running locally
 
 ```bash
-# Terminal 1 (backend, desde la raíz)
+# Terminal 1 (backend, from the repo root)
 source .venv/bin/activate
 uvicorn backend.presentation_api:app --port 8000
 
 # Terminal 2 (frontend)
 cd frontend && npm run dev
-# Abrir http://localhost:5173/live
+# Open http://localhost:5173/live
 ```
 
-> El micrófono requiere `localhost` o HTTPS. Safari no soporta `audio/webm`: el frontend graba en `audio/mp4` y el backend lo convierte igual con ffmpeg.
+> The mic requires `localhost` or HTTPS. Safari does not support `audio/webm`: the frontend records `audio/mp4` instead and the backend still converts it with ffmpeg.
 
-## Cómo conseguir las keys
+## Getting the keys
 
-1. **Meta Muse**: portal de desarrolladores de Meta → proyecto con acceso a Muse Voice → key `LLM_...` → `MODEL_API_KEY`.
-2. **OpenRouter**: cuenta en OpenRouter → API key → `OPENROUTER_API_KEY` (gate Jev, endpoint Decisions).
-3. **Clerk**: aplicación en Clerk → `CLERK_SECRET_KEY` (backend) + `VITE_CLERK_PUBLISHABLE_KEY` (frontend).
-4. **Resend** (opcional en dev): API key → `RESEND_API_KEY` + `CONTACT_TO` / `CONTACT_FROM`.
+1. **Meta Muse**: Meta developer portal → project with Muse Voice access → `LLM_...` key → `MODEL_API_KEY`.
+2. **OpenRouter**: OpenRouter account → API key → `OPENROUTER_API_KEY` (Jev gate, Decisions endpoint).
+3. **Clerk**: Clerk application → `CLERK_SECRET_KEY` (backend) + `VITE_CLERK_PUBLISHABLE_KEY` (frontend).
+4. **Resend** (optional in dev): API key → `RESEND_API_KEY` + `CONTACT_TO` / `CONTACT_FROM`.
 
-## Variables de entorno
+## Environment variables
 
-| Variable | Alcance | Default |
+| Variable | Scope | Default |
 |---|---|---|
-| `MODEL_API_KEY` | Backend | (vacía, formato `LLM_...`) |
+| `MODEL_API_KEY` | Backend | (empty, `LLM_...` format) |
 | `META_ASR_URL` | Backend | `https://api.meta.ai/v1/asr/transcribe` |
 | `META_REALTIME_URL` | Backend | `wss://api.meta.ai/v1/asr/realtime` |
 | `ASR_MODEL` | Backend | `muse-voice-transcribe-1.0` |
-| `OPENROUTER_API_KEY` | Backend | (vacía) |
+| `OPENROUTER_API_KEY` | Backend | (empty) |
 | `JEV_MODEL` | Backend | `typesafe/jev-1.13` |
 | `JEV_TOPIC_P` | Backend | `0.6` |
 | `JEV_ACTION_CONF` | Backend | `0.65` |
 | `JEV_NEW_CONF` | Backend | `0.80` |
 | `JEV_TIMEOUT_MS` | Backend | `4000` |
 | `SLIDE_WINDOW_S` | Backend | `10` |
-| `WINDOW_DUTY_CYCLE` | Backend | (vacía = siempre activa) |
+| `WINDOW_DUTY_CYCLE` | Backend | (empty = always on) |
 | `WINDOW_TARGET_WORDS` | Backend | `18` |
 | `WINDOW_MAX_VOICE_S` | Backend | `12.0` |
 | `WINDOW_MIN_CONTENT_WORDS` | Backend | `5` |
@@ -116,9 +117,9 @@ cd frontend && npm run dev
 | `LLM_TIMEOUT_S` | Backend | `15` |
 | `MAX_COMPLETION_TOKENS` | Backend | `1600` |
 | `TRIAL_HOURS` | Backend | `24` |
-| `TRIAL_STORE_PATH` | Backend | (vacía = ruta local por defecto) |
-| `CLERK_SECRET_KEY` | Backend | (vacía) |
-| `RESEND_API_KEY` | Backend | (vacía) |
+| `TRIAL_STORE_PATH` | Backend | (empty = default local path) |
+| `CLERK_SECRET_KEY` | Backend | (empty) |
+| `RESEND_API_KEY` | Backend | (empty) |
 | `CONTACT_TO` | Backend | `contacto@devstudio.cl` |
 | `CONTACT_FROM` | Backend | `onboarding@resend.dev` |
 | `ENABLE_IMAGE_GENERATION` | Backend | `false` |
@@ -128,8 +129,8 @@ cd frontend && npm run dev
 | `REALTIME_PRE_ROLL_MS` | Backend | `500` |
 | `REALTIME_VAD_THRESHOLD` | Backend | `0.02` |
 | `VITE_API_BASE_URL` | Frontend | `http://localhost:8000` |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | (vacía) |
-| `VITE_WS_SLIDES_ENABLED` | Frontend | (flag: WS como productor único de slides) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | (empty) |
+| `VITE_WS_SLIDES_ENABLED` | Frontend | (flag: WS as single slide producer) |
 
 ## Tests
 
@@ -139,18 +140,18 @@ pytest backend/test_main.py backend/test_slide_designs.py backend/test_auth_tria
 ```
 
 ```bash
-cd frontend && npm run build  # vue-tsc --noEmit + vite build, limpio (191 módulos)
+cd frontend && npm run build  # vue-tsc --noEmit + vite build, clean (191 modules)
 ```
 
-## Límites y costo
+## Limits and cost
 
-- Archivo máx. **32 MB** (413 si se supera); duración aprox. **10 min** por pedido.
-- Costo de referencia transcripción: **$0.18/hora** de audio. Formato exigido por Meta: **WAV** (conversión automática con ffmpeg).
+- Max file **32 MB** (413 if exceeded); approx duration **10 min** per request.
+- Reference transcription cost: **$0.18/hour** of audio. Format required by Meta: **WAV** (automatic conversion with ffmpeg).
 
-## Limitaciones MVP
+## MVP limitations
 
-- Sesiones en memoria con TTL 2 h: se pierden al reiniciar; no apto multi-worker.
-- Trial persistido en JSON local (no base de datos real).
-- CORS `*` (solo MVP; restringir orígenes antes de producción).
-- `credits` es stub; `database.py`, `web_search.py` e `image.py` son TODO.
-- Sin exportación a PPT/PDF.
+- In-memory sessions with 2 h TTL: lost on restart; not multi-worker safe.
+- Trial persisted in local JSON (no real database).
+- CORS `*` (MVP only; restrict origins before production).
+- `credits` is a stub; `database.py`, `web_search.py` and `image.py` are TODO.
+- No PPT/PDF export.
