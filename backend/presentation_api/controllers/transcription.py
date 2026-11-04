@@ -1,4 +1,5 @@
 """Controller transcription: proxy que oculta MODEL_API_KEY y llama a Meta Muse Voice Transcribe API."""
+import asyncio
 import json
 import os
 import shutil
@@ -6,7 +7,8 @@ import subprocess
 import tempfile
 
 import httpx
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket
+from backend.presentation_api.utils.auth import extract_ws_token, get_current_user, require_auth
 from backend.presentation_api.utils.topic_cleaner import analyze_topic, clean_topic
 
 from backend.realtime_proxy import handle_frontend_socket
@@ -48,7 +50,7 @@ def convert_audio_bytes(data: bytes) -> bytes:
     if shutil.which("ffmpeg") is None:
         raise HTTPException(
             status_code=500,
-            detail="ffmpeg no esta instalado. Instalalo con: brew install ffmpeg (macOS) o apt install ffmpeg (Linux).",
+            detail="ffmpeg no esta instalado. Instálalo con: brew install ffmpeg (macOS) o apt install ffmpeg (Linux).",
         )
     tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix="-input")
     tmp_out_path = tmp_in.name + "-24k.wav"
@@ -81,7 +83,7 @@ def convert_audio_bytes(data: bytes) -> bytes:
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
-            detail="ffmpeg no esta instalado. Instalalo con: brew install ffmpeg (macOS) o apt install ffmpeg (Linux).",
+            detail="ffmpeg no esta instalado. Instálalo con: brew install ffmpeg (macOS) o apt install ffmpeg (Linux).",
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Error al convertir audio: {exc}")
@@ -116,12 +118,19 @@ def extract_text(payload: dict) -> str:
 
 
 @router.post("/api/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(file: UploadFile = File(...), user: dict = Depends(require_auth)):
+    from backend.presentation_api.utils.trial import is_trial_active
+
+    if not is_trial_active(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Tu prueba gratuita finalizó. Escríbenos por el formulario de contacto y la extendemos.",
+        )
     api_key = get_api_key()
     if not api_key:
         raise HTTPException(
             status_code=503,
-            detail="MODEL_API_KEY no configurada en el backend. Defini MODEL_API_KEY en el archivo .env.",
+            detail="MODEL_API_KEY no configurada en el backend. Define MODEL_API_KEY en el archivo .env.",
         )
 
     raw = await file.read()
@@ -133,7 +142,8 @@ async def transcribe(file: UploadFile = File(...)):
             detail=f"Archivo supera el limite de 32 MB (recibido {len(raw) / 1024 / 1024:.1f} MB).",
         )
 
-    wav_bytes = convert_audio_bytes(raw)
+    # Conversión ffmpeg (subprocess) en worker thread para no bloquear el event loop.
+    wav_bytes = await asyncio.to_thread(convert_audio_bytes, raw)
 
     request_part = {
         "model": get_asr_model(),
@@ -195,6 +205,50 @@ async def transcribe(file: UploadFile = File(...)):
 async def ws_transcribe(websocket: WebSocket):
     """Proxy realtime: PCM 24k del frontend hacia Meta, eventos de vuelta.
 
+    Auth Clerk obligatoria: token en query `?token=` o header
+    Sec-WebSocket-Protocol. Cierra con 4401 si falta/invalido o trial vencido.
+    Sin CLERK_SECRET_KEY (dev) permite con warning (fail-open, ver auth.py).
+
     El POST /api/transcribe queda intacto como fallback por lotes.
     """
-    await handle_frontend_socket(websocket)
+    from backend.presentation_api.utils.trial import is_trial_active
+
+    token = extract_ws_token(websocket)
+    try:
+        user = await asyncio.to_thread(get_current_user, token)
+    except HTTPException:
+        # Rechazo con motivo legible: accept + error + close 4401.
+        await websocket.accept()
+        try:
+            import json as _json
+
+            await websocket.send_text(
+                _json.dumps({"type": "error", "message": "Autenticacion requerida (Clerk)."})
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        await websocket.close(code=4401)
+        return
+    if not is_trial_active(user):
+        await websocket.accept()
+        try:
+            import json as _json
+
+            await websocket.send_text(
+                _json.dumps(
+                    {
+                        "type": "error",
+                        "message": "Tu prueba gratuita finalizó. Escríbenos por el formulario de contacto y la extendemos.",
+                    }
+                )
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await websocket.close(code=4401)
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    # Clerk identity (verified sub) flows into the bridge/store; the
+    # frontend user_id is never trusted. Dev-local fail-open stays in auth.
+    await handle_frontend_socket(websocket, user_id=user.get("user_id") or "dev-local")

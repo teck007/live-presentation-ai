@@ -57,8 +57,11 @@ def _sin_jev_real(monkeypatch):
 
     Sin esto, los tests que no mockean decide_slide_action dependen del
     veredicto en vivo (costo real, latencia variable, resultados fragiles).
+    Tampoco depende del .env local para auth: sin CLERK_SECRET_KEY rige el
+    fail-open dev (usuario dev-local) y los endpoints responden sin token.
     """
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("CLERK_SECRET_KEY", raising=False)
 
 
 def test_health_sin_key(client_sin_key):
@@ -622,6 +625,7 @@ def test_ws_opening_seq1_keeps_hero_second_degrades():
 
     async def scenario():
         bridge, front = _make_bridge()
+        from backend.presentation_api.utils import jev_client as jev_mod
         from backend.presentation_api.utils import llm_client as llm_mod
 
         def hero_generate(transcript, topic, keywords=None, *args, **kwargs):
@@ -639,6 +643,11 @@ def test_ws_opening_seq1_keeps_hero_second_degrades():
             return hero_generate(transcript, topic, keywords, *args, **kwargs)
 
         with (
+            # Gate aislado en new: este test verifica degradacion de hero,
+            # no el veredicto del gate (fail-open conservador haria keep).
+            patch.object(jev_mod, "decide_slide_action",
+                         return_value={"relevant": True, "action": "new",
+                                       "reason": "jev:new", "raw": {}}),
             patch.object(llm_mod, "generate_slide", side_effect=capture),
             patch("backend.realtime_proxy.is_relevant", return_value=True),
         ):
@@ -1349,3 +1358,429 @@ def test_ws_image_stale_no_emite_update():
         await bridge.cancel_slide_tasks()
 
     asyncio.run(scenario())
+
+
+# --- Slice 1: gate keep/update/new + live sessions store + resume REST ---
+
+def _jev_answers(choice: str, conf: float, on_p: float = 0.95) -> dict:
+    probs = {"keep": 0.05, "update": 0.05, "new": 0.05}
+    probs[choice] = conf
+    return {"answers": {
+        "on_topic": {"type": "noul", "noul": on_p},
+        "slide_action": {"type": "choice", "choice": choice,
+                         "confidence": conf, "probabilities": probs},
+    }}
+
+
+def test_jev_parse_invalid_append_choice_fail_open():
+    """Choice append (removed action) -> fail-open with the true reason."""
+    from backend.presentation_api.utils import jev_client as jev_mod
+
+    assert "append" not in jev_mod.SLIDE_ACTION_QUESTION
+    assert "append" not in jev_mod._VALID_ACTIONS
+    parsed = jev_mod.parse_decision_payload(_jev_answers("append", 0.9))
+    assert parsed["action"] == "new"
+    assert parsed["reason"] == "fail-open: invalid-choice"
+    parsed_base = jev_mod.parse_decision_payload(
+        _jev_answers("append", 0.9), has_current_slide=True)
+    assert parsed_base["action"] == "keep"
+    assert parsed_base["reason"] == "fail-open: invalid-choice"
+
+
+def test_jev_new_threshold_downgrade():
+    """Weak new (<0.80, >=0.65): keep with base, new without."""
+    from backend.presentation_api.utils import jev_client as jev_mod
+
+    weak_new = _jev_answers("new", 0.70)
+    assert jev_mod.parse_decision_payload(weak_new)["action"] == "new"
+    downgraded = jev_mod.parse_decision_payload(
+        weak_new, has_current_slide=True)
+    assert downgraded["action"] == "keep"
+    assert downgraded["reason"] == "jev:keep-downgraded"
+    strong = jev_mod.parse_decision_payload(
+        _jev_answers("new", 0.90), has_current_slide=True)
+    assert strong["action"] == "new"
+
+
+def test_jev_fail_open_with_without_slide():
+    """Fail-open conservador: sin slide -> new, con slide -> keep."""
+    from backend.presentation_api.utils import jev_client as jev_mod
+
+    assert jev_mod.parse_decision_payload(None,
+                                          has_current_slide=True)["action"] == "keep"
+    assert jev_mod.parse_decision_payload(
+        {"answers": {"slide_action": {"choice": "borrar"}}},
+        has_current_slide=True)["action"] == "keep"
+    low = {"answers": {"on_topic": {"probability": 0.9},
+                       "slide_action": {"choice": "keep", "confidence": 0.1}}}
+    assert jev_mod.parse_decision_payload(low,
+                                          has_current_slide=True)["action"] == "keep"
+    assert jev_mod.parse_decision_payload(low)["action"] == "new"
+    # decide_slide_action sin key: mapea segun haya slide base o no.
+    assert jev_mod.decide_slide_action("t", [], "general", "x", None)["action"] == "new"
+    base = {"titulo": "T", "resumen": "r", "layout": "title_text"}
+    assert jev_mod.decide_slide_action("t", [], "general", "x", base)["action"] == "keep"
+
+
+def test_jev_payload_rich_slide_actual_and_history_cap():
+    """Payload con slide_actual rico + historial capado a 8."""
+    from backend.presentation_api.utils import jev_client as jev_mod
+
+    history = [{"titulo": f"T{i}", "layout": "title_text",
+                "resumen": f"r{i}", "keywords": ["k"]} for i in range(10)]
+    payload = jev_mod.build_payload(
+        "tema", ["k"], "general", "turno",
+        {"layout": "bullets_flex", "titulo": "T", "resumen": "r",
+         "segundos_desde_creacion": 30, "turnos_desde_creacion": 3},
+        historial_reciente=history,
+    )
+    actual = payload["state"]["slide_actual"]
+    assert actual["layout"] == "bullets_flex"
+    assert "capacidad_restante" not in actual
+    assert "elementos_actuales" not in actual
+    assert actual["segundos_desde_creacion"] == 30
+    assert actual["turnos_desde_creacion"] == 3
+    assert len(payload["state"]["historial_reciente"]) == 8
+    assert payload["state"]["historial_reciente"][0]["titulo"] == "T2"
+
+
+def test_live_sessions_ttl_seq_and_update():
+    """Store: 2h TTL, stale seq rejected, update replaces without history."""
+    from backend.presentation_api.utils import live_sessions as live
+
+    entry = live.get_or_create("u-store-1", "s-store-1")
+    slide = {"layout": "bullets_flex", "title": "T", "titulo": "T",
+             "text": "x", "texto": "x", "bullets": ["alpha"],
+             "cards": [], "steps": [], "chips": [], "stats": [],
+             "keywords": []}
+    assert live.record_new(entry, slide, 1, "t1-1") is True
+    assert live.record_new(entry, slide, 1, "t1-1") is False  # stale seq
+    updated = dict(slide, title="T2", titulo="T2")
+    assert live.record_update(entry, updated, 1, "t1-1") is False  # stale seq
+    assert live.record_update(entry, updated, 2, "t1-1") is True
+    assert entry["current_slide"]["title"] == "T2"
+    assert len(entry["history"]) == 0  # update no archiva
+    # TTL: entrada vieja se lee como ausente.
+    entry["updated_at"] = live._now() - live.SESSION_TTL_S - 1
+    assert live.get("u-store-1", "s-store-1") is None
+    live.discard("u-store-1", "s-store-1")
+
+
+def test_live_sessions_history_max_and_version_reset():
+    """Historial max 8; cambio de topicVersion archiva y limpia base."""
+    from backend.presentation_api.utils import live_sessions as live
+
+    entry = live.get_or_create("u-store-2", "s-store-2")
+    for i in range(10):
+        live.record_new(entry, {"layout": "title_text", "title": f"T{i}",
+                                "titulo": f"T{i}", "text": "x", "texto": "x",
+                                "keywords": []}, i + 1, f"t{i}-{i + 1}")
+    assert len(entry["history"]) == 8
+    assert entry["history"][0]["titulo"] == "T1"
+    live.reset_for_topic_version(entry, 2, "nuevo tema")
+    assert entry["current_slide"] is None
+    assert entry["topic_version"] == 2
+    assert entry["topic"] == "nuevo tema"
+    assert len(entry["history"]) == 8  # T9 archivado, T0 fuera
+    slide_actual, historial = live.build_jev_context(entry)
+    assert slide_actual == {} and len(historial) == 8
+    assert len(entry["jev_context_cache"]) <= 2500
+    live.discard("u-store-2", "s-store-2")
+
+
+def test_ws_update_carries_replaces_id():
+    """Update con base -> slide_replaced con el id real del slide previo."""
+
+    async def scenario():
+        bridge, front = _make_bridge()
+        from backend.presentation_api.utils import jev_client as jev_mod
+        from backend.presentation_api.utils import llm_client as llm_mod
+
+        fake_slide = {"layout": "title_text", "title": "T", "text": "x",
+                      "bullets": [], "keywords": [],
+                      "relevant": True, "filtered": False}
+        decisions = [
+            {"relevant": True, "action": "new", "reason": "jev:new", "raw": {}},
+            {"relevant": True, "action": "update", "reason": "jev:update", "raw": {}},
+        ]
+        with (
+            patch.object(jev_mod, "decide_slide_action", side_effect=decisions),
+            patch.object(llm_mod, "generate_slide", return_value=fake_slide),
+        ):
+            await bridge.handle_speech_complete(_speech_complete("t-u1"))
+            await _drain_bridge(bridge)
+            await bridge.handle_speech_complete(_speech_complete("t-u2"))
+            await _drain_bridge(bridge)
+        replaced = [m for m in front.sent if m.get("type") == "slide_replaced"]
+        assert len(replaced) == 1
+        assert replaced[0]["turnId"] == "t-u2"
+        assert replaced[0]["replaces"] == "t-u1"
+        assert replaced[0]["targetSlideId"] == "t-u1-1"
+        await bridge.cancel_slide_tasks()
+
+    asyncio.run(scenario())
+
+
+def test_rest_live_session_resume_and_discard():
+    """GET resume check + DELETE descarte para el usuario actual."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    entry = live.get_or_create("dev-local")
+    live.record_new(entry, {"layout": "title_text", "title": "T", "titulo": "T",
+                            "text": "x", "texto": "x", "keywords": []},
+                    entry["last_recorded_seq"] + 1,
+                    f"seed-{entry['last_recorded_seq'] + 1}")
+    sid = entry["live_session_id"]
+    client = TestClient(app_mod)
+    r = client.get("/api/presentations/live-session")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["has_saved"] is True
+    assert body["live_session_id"] == sid
+    assert body["slide_count"] >= 1
+    assert body["updated_at"]
+    d = client.delete(f"/api/presentations/live-session/{sid}")
+    assert d.status_code == 200 and d.json()["discarded"] is True
+    d2 = client.delete(f"/api/presentations/live-session/{sid}")
+    assert d2.json()["discarded"] is False
+
+
+def _slides_test_slide(title: str, layout: str = "title_text", **extra) -> dict:
+    base = {"layout": layout, "title": title, "titulo": title,
+            "text": f"text-{title}", "texto": f"text-{title}",
+            "bullets": [f"b-{title}"], "keywords": ["k"],
+            "cards": [], "steps": [], "chips": [], "stats": []}
+    base.update(extra)
+    return base
+
+
+def _override_user(app_mod, user_id: str):
+    from backend.presentation_api.utils.auth import require_auth
+
+    async def _ov():
+        return {"user_id": user_id, "created_at": None}
+
+    app_mod.dependency_overrides[require_auth] = _ov
+
+
+def test_live_session_slides_order_and_meta_consistent():
+    """Slides endpoint returns paint-ordered full slides; meta count matches."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    user = "u-slides-order"
+    sid = "sess-order-1"
+    live.discard(user, sid)
+    entry = live.get_or_create(user, sid)
+    entry["topic"] = "clima"
+    for i, title in enumerate(["Intro", "Causas", "Efectos"], start=1):
+        assert live.record_new(entry, _slides_test_slide(title), i, f"turn{i}-{i}") is True
+    _override_user(app_mod, user)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["live_session_id"] == sid
+        assert body["topic"] == "clima"
+        assert body["updated_at"]
+        slides = body["slides"]
+        assert len(slides) == 3
+        assert [s["title"] for s in slides] == ["Intro", "Causas", "Efectos"]
+        assert [s["seq"] for s in slides] == [1, 2, 3]
+        assert [s["id"] for s in slides] == ["turn1-1", "turn2-2", "turn3-3"]
+        for s in slides:
+            for key in ("layout", "title", "text", "bullets", "cards",
+                        "steps", "chips", "stats", "code", "image",
+                        "html", "palette", "topicVersion"):
+                assert key in s, f"missing {key} in {s.get('id')}"
+            assert isinstance(s["html"], str) and s["html"]
+            assert s["topicVersion"] >= 1
+        assert "user_id" not in body
+        m = client.get("/api/presentations/live-session")
+        assert m.status_code == 200, m.text
+        assert m.json()["slide_count"] == len(slides) == 3
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(user, sid)
+
+
+def test_live_session_slides_ownership():
+    """User A cannot read user B session (404, no leakage)."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    owner, other, sid = "u-owner-a", "u-other-b", "sess-owner-1"
+    live.discard(owner, sid)
+    live.discard(other, sid)
+    entry = live.get_or_create(owner, sid)
+    assert live.record_new(entry, _slides_test_slide("Secret"), 1, "t-1") is True
+    _override_user(app_mod, other)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 404, r.text
+        assert "user" not in r.text.lower() or "user_id" not in r.json().get("detail", "")
+    finally:
+        app_mod.dependency_overrides.clear()
+    _override_user(app_mod, owner)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 200, r.text
+        assert len(r.json()["slides"]) == 1
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(owner, sid)
+        live.discard(other, sid)
+
+
+def test_live_session_slides_404_unknown_and_expired():
+    """Unknown id and expired entry both read as 404."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    user, sid = "u-slides-404", "sess-404-1"
+    live.discard(user, sid)
+    _override_user(app_mod, user)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 404, r.text
+        entry = live.get_or_create(user, sid)
+        assert live.record_new(entry, _slides_test_slide("T"), 1, "t-1") is True
+        entry["updated_at"] = live._now() - live.SESSION_TTL_S - 1
+        r2 = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r2.status_code == 404, r2.text
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(user, sid)
+
+
+def test_live_session_slides_update_reflected():
+    """Update replaces content in place; order and id kept."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    user, sid = "u-slides-mut", "sess-mut-1"
+    live.discard(user, sid)
+    entry = live.get_or_create(user, sid)
+    assert live.record_new(entry, _slides_test_slide("Base"), 1, "base-1") is True
+    _override_user(app_mod, user)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 200, r.text
+        slides = r.json()["slides"]
+        assert len(slides) == 1
+        assert slides[0]["id"] == "base-1"
+        updated = dict(slides[0])
+        updated.update({"title": "Base v2", "titulo": "Base v2",
+                        "text": "nuevo", "texto": "nuevo"})
+        stored = {k: v for k, v in updated.items()
+                  if k not in ("id", "seq", "topicVersion", "html",
+                               "palette", "palette_id", "audience")}
+        assert live.record_update(entry, stored, 2, "base-1") is True
+        r2 = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r2.status_code == 200, r2.text
+        slides2 = r2.json()["slides"]
+        assert len(slides2) == 1
+        assert slides2[0]["title"] == "Base v2"
+        assert slides2[0]["id"] == "base-1"
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(user, sid)
+
+
+def test_display_scale_clamp_and_invalid_keeps_previous():
+    """set_display_scale clamps to 0.8-1.3; invalid input keeps previous."""
+    from backend.presentation_api.utils import live_sessions as live
+
+    user, sid = "u-scale-clamp", "sess-scale-1"
+    live.discard(user, sid)
+    entry = live.get_or_create(user, sid)
+    try:
+        assert live.get_display_scale(entry) == 1.0
+        assert live.set_display_scale(entry, 1.2) is True
+        assert live.get_display_scale(entry) == 1.2
+        assert live.set_display_scale(entry, 2.0) is True
+        assert live.get_display_scale(entry) == 1.3
+        assert live.set_display_scale(entry, 0.2) is True
+        assert live.get_display_scale(entry) == 0.8
+        assert live.set_display_scale(entry, "oops") is False
+        assert live.set_display_scale(entry, None) is False
+        assert live.set_display_scale(entry, float("nan")) is False
+        assert live.get_display_scale(entry) == 0.8
+        assert live.clamp_display_scale("1.1") == 1.1
+        assert live.clamp_display_scale(object()) is None
+    finally:
+        live.discard(user, sid)
+
+
+def test_rest_live_session_display_scale_exposed():
+    """Meta + slides endpoints expose the stored displayScale (default 1.0)."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    user, sid = "u-scale-rest", "sess-scale-2"
+    live.discard(user, sid)
+    entry = live.get_or_create(user, sid)
+    assert live.record_new(entry, _slides_test_slide("T"), 1, "t-1") is True
+    _override_user(app_mod, user)
+    try:
+        client = TestClient(app_mod)
+        m = client.get("/api/presentations/live-session")
+        assert m.status_code == 200, m.text
+        assert m.json()["displayScale"] == 1.0
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 200, r.text
+        assert r.json()["displayScale"] == 1.0
+        assert live.set_display_scale(entry, 1.3) is True
+        m2 = client.get("/api/presentations/live-session")
+        assert m2.json()["displayScale"] == 1.3
+        r2 = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r2.json()["displayScale"] == 1.3
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(user, sid)
+
+
+def test_live_session_display_scale_ownership():
+    """Scale is per (user, session): other users get 404, never the value."""
+    from fastapi.testclient import TestClient
+
+    from backend.presentation_api import app as app_mod
+    from backend.presentation_api.utils import live_sessions as live
+
+    owner, other, sid = "u-scale-own", "u-scale-oth", "sess-scale-3"
+    live.discard(owner, sid)
+    live.discard(other, sid)
+    entry = live.get_or_create(owner, sid)
+    assert live.record_new(entry, _slides_test_slide("Secret"), 1, "t-1") is True
+    assert live.set_display_scale(entry, 0.9) is True
+    _override_user(app_mod, other)
+    try:
+        client = TestClient(app_mod)
+        r = client.get(f"/api/presentations/live-session/{sid}/slides")
+        assert r.status_code == 404, r.text
+        assert "0.9" not in r.text
+        m = client.get("/api/presentations/live-session")
+        assert m.status_code == 200, m.text
+        assert m.json()["has_saved"] is False
+    finally:
+        app_mod.dependency_overrides.clear()
+        live.discard(owner, sid)
+        live.discard(other, sid)

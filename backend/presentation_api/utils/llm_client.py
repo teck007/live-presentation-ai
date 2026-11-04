@@ -8,9 +8,29 @@ from openai import OpenAI
 
 dotenv.load_dotenv()
 
+
+def _read_llm_timeout_s() -> float:
+    """Explicit client timeout (s); env LLM_TIMEOUT_S, default 15, clamped 1-60."""
+    try:
+        v = float(os.getenv("LLM_TIMEOUT_S", "15"))
+    except ValueError:
+        v = 15.0
+    return min(60.0, max(1.0, v))
+
+
+def _read_max_completion_tokens() -> int:
+    """Max output tokens; env MAX_COMPLETION_TOKENS, default 1600 (tests assert >=800)."""
+    try:
+        v = int(os.getenv("MAX_COMPLETION_TOKENS", "1600"))
+    except ValueError:
+        v = 1600
+    return min(8000, max(1, v))
+
+
 client = OpenAI(
     base_url="https://api.meta.ai/v1",
     api_key=os.getenv("MODEL_API_KEY"),
+    timeout=_read_llm_timeout_s(),
 )
 from backend.presentation_api.utils.slide_designs import (
     SLIDE_DESIGNS,
@@ -20,8 +40,19 @@ from backend.presentation_api.utils.slide_designs import (
 )
 
 # Max output tokens for a single live slide JSON response.
-# Bumped to fit developed texto (3-5 sentences) + support blocks.
-MAX_COMPLETION_TOKENS = 1600
+# Sized for tight texto (2-3 sentences) + up to 2 support blocks.
+MAX_COMPLETION_TOKENS = _read_max_completion_tokens()
+
+
+_DESIGNS_PROMPT_CACHE: str | None = None
+
+
+def _designs_for_prompt_cached() -> str:
+    """Cached design catalog: SLIDE_DESIGNS is static, build once per process."""
+    global _DESIGNS_PROMPT_CACHE
+    if _DESIGNS_PROMPT_CACHE is None:
+        _DESIGNS_PROMPT_CACHE = list_designs_for_prompt()
+    return _DESIGNS_PROMPT_CACHE
 
 VALID_AUDIENCES = ("ninos", "estudiantes", "general", "profesionales", "expertos")
 
@@ -63,15 +94,15 @@ SLIDE_SYSTEM_PROMPT = (
     "{\"relevant\": true|false, \"layout\": \"<id de layout o null: el backend deriva si es null>\", "
     "\"content_type\": \"<definicion|idea|proceso|comparacion|dato|mensaje|cierre>\", "
     "\"layout_reason\": \"<1 frase tecnica: por que este layout>\", "
-    "\"titulo\": \"titulo breve en espanol\", "
-    "\"texto\": \"explicacion desarrollada en espanol, 3-5 frases completas segun audiencia, "
+    "\"titulo\": \"titulo en espanol, 8-10 palabras, estilo afirmacion (1 idea dominante)\", "
+    "\"texto\": \"texto en espanol, 2-3 frases cortas (35-45 palabras max), "
     "prioriza la idea dominante sin muro de texto\", "
     "\"imagen_hashtag\": \"tags en INGLES separados por comas para imagen futura o null\", "
     "\"imagen_prompt\": \"frase visual en INGLES (1 frase, max 300 chars) solo si layout visual o null\", "
-    "\"conceptos\": [{\"subtitulo\": \"...\", \"icono\": \"<idea|libro|codigo|grafico|lupa|lista|check|alerta|estrella|chat>\", "
-    "\"texto\": \"...\", \"codigo_matematica\": null|{\"tipo\": \"codigo|matematica\", \"titulo\": \"Ejemplo|Ejercicio\", \"contenido\": \"...\"}}] "
+    "\"conceptos\": [{\"subtitulo\": \"titulo corto\", \"icono\": \"<idea|libro|codigo|grafico|lupa|lista|check|alerta|estrella|chat>\", "
+    "\"texto\": \"1 linea acotada\", \"codigo_matematica\": null|{\"tipo\": \"codigo|matematica\", \"titulo\": \"Ejemplo|Ejercicio\", \"contenido\": \"...\"}}] "
     "maximo 4 o null, "
-    "\"listado\": [\"maximo 4 strings simples\"] o null, "
+    "\"listado\": [\"maximo 4 strings cortos, ~12 palabras cada uno\"] o null, "
     "\"codigo_matematica\": null|{\"tipo\": \"codigo|matematica\", \"titulo\": \"Ejemplo|Ejercicio\", \"contenido\": \"...\"}, "
     "\"title\": \"alias ingles de titulo (compat)\", "
     "\"text\": \"alias ingles de texto (compat)\", "
@@ -98,7 +129,7 @@ SLIDE_SYSTEM_PROMPT = (
     "La evaluacion es semantica, no literal. "
     "Si relevant=false, devuelve layout title_text con titulo y texto vacios. "
     "Si relevant=true, texto NO repite literal la transcripcion: explica la tematica "
-    "contextualizada al Tema principal, 3-5 frases segun audiencia. "
+    "contextualizada al Tema principal, 2-3 frases cortas (35-45 palabras max) segun audiencia. "
     "Rellena SOLO lo que el tema pida; el resto va en null (nunca strings vacios inventados). "
     "Maximo 2 bloques de apoyo ademas de titulo+texto (conceptos, listado, codigo_matematica, imagen_hashtag); "
     "si hay mas, deja los 2 mas importantes y el resto en null. "
@@ -147,7 +178,7 @@ SLIDE_SYSTEM_PROMPT = (
     "Ejemplo comparacion: transcripcion \"Postgres versus SQLite para este MVP\" -> "
     "layout compare_2 con cards de 2 items. "
     "Ejemplo compuesto: transcripcion \"la fotosintesis convierte luz en energia con clorofila\" -> "
-    "{\"titulo\": \"Fotosintesis\", \"texto\": \"...3-5 frases...\", "
+    "{\"titulo\": \"Fotosintesis\", \"texto\": \"...2-3 frases, 35-45 palabras...\", "
     "\"conceptos\": [{\"subtitulo\": \"Clorofila\", \"icono\": \"libro\", \"texto\": \"...\", \"codigo_matematica\": null}], "
     "\"listado\": null, \"codigo_matematica\": null, \"imagen_hashtag\": \"photosynthesis, leaf\"}. "
     "Ejemplo codigo: transcripcion \"para sumar usamos def suma(a, b): return a + b\" -> "
@@ -205,6 +236,22 @@ def _fallback_slide(transcript: str, keywords: list[str] | None, topic: str = ""
     }
 
 
+def _format_previous_slides(previous_slides: list | None) -> str:
+    """Compact previous slides context (max 5) to avoid repeating titles/ideas."""
+    if not isinstance(previous_slides, list) or not previous_slides:
+        return "(ninguna)"
+    parts: list[str] = []
+    for item in previous_slides[-5:]:
+        if not isinstance(item, dict):
+            continue
+        titulo = str(item.get("titulo") or item.get("title") or "").strip()[:80]
+        resumen = str(item.get("resumen") or item.get("text") or "").strip()[:160]
+        if not titulo and not resumen:
+            continue
+        parts.append(f"- {titulo}: {resumen}".strip())
+    return "\n".join(parts[:5]) if parts else "(ninguna)"
+
+
 def generate_slide(
     transcript: str,
     topic: str,
@@ -212,6 +259,7 @@ def generate_slide(
     audience: str = "general",
     previous_layout: str | None = None,
     is_opening: bool = False,
+    previous_slides: list | None = None,
 ) -> dict:
     """Generate slide content as plain JSON (no HTML).
 
@@ -223,14 +271,16 @@ def generate_slide(
     previous_layout = str(previous_layout or "").strip() or ""
     start = time.perf_counter()
     try:
+        prev_ctx = _format_previous_slides(previous_slides)
         user_content = (
             f"Tema principal: {topic.strip() or '(sin definir)'}\n"
             f"Keywords: {', '.join(kws) if kws else '(ninguna)'}\n"
             f"Audiencia: {audience} — {AUDIENCE_GUIDANCE[audience]}\n"
             f"Layout anterior: {previous_layout or '(ninguno)'}\n"
             f"Es apertura: {'si' if is_opening else 'no'} — hero_cover solo permitido si si\n"
+            f"Slides previas (NO repitas titulo ni idea dominante ya cubierta):\n{prev_ctx}\n"
             f"Transcripción: {transcript.strip()}\n"
-            f"Diseños disponibles: {list_designs_for_prompt()}"
+            f"Diseños disponibles: {_designs_for_prompt_cached()}"
         )
         response = client.chat.completions.create(
             model="muse-spark-1.3",
@@ -238,6 +288,7 @@ def generate_slide(
                 {"role": "system", "content": SLIDE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
+            # TODO(measured): temperature 0.7 stays until latency/quality data says otherwise.
             temperature=0.7,
             top_p=0.9,
             max_completion_tokens=MAX_COMPLETION_TOKENS,
@@ -299,18 +350,19 @@ def generate_slide(
         raw_layout = data.get("layout") if isinstance(data, dict) else None
         layout = raw_layout if raw_layout in VALID_LAYOUTS else None
         # Spanish composite wins; English kept for compat.
+        # Caps mirror validate_slide budgets (large editorial type).
         title = (
-            str(data.get("titulo") or data.get("title") or "").strip()[:120]
+            str(data.get("titulo") or data.get("title") or "").strip()[:100]
             or "En vivo"
         )
         text = (
-            str(data.get("texto") or data.get("text") or "").strip()[:900]
-            or (transcript or "").strip()[:900]
+            str(data.get("texto") or data.get("text") or "").strip()[:400]
+            or (transcript or "").strip()[:400]
         )
         raw_listado = data.get("listado") if isinstance(data.get("listado"), list) else None
         raw_bullets = data.get("bullets") if isinstance(data.get("bullets"), list) else []
         bullets_src = raw_listado if raw_listado is not None else raw_bullets
-        bullets = [str(b).strip()[:140] for b in bullets_src if str(b).strip()][:4]
+        bullets = [str(b).strip()[:120] for b in bullets_src if str(b).strip()][:4]
         out_kws = data.get("keywords") if isinstance(data.get("keywords"), list) else kws
         out_kws = [str(k).strip() for k in out_kws if str(k).strip()][:5]
         validated = validate_slide(

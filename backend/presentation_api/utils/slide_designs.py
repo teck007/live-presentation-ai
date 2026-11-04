@@ -299,7 +299,7 @@ def _sanitize_codigo_matematica(value: object) -> dict | None:
     }
 
 
-def _esc_list(items: object, limit_each: int = 140) -> list:
+def _esc_list(items: object, limit_each: int = 120) -> list:
     if not isinstance(items, list):
         return []
     out = []
@@ -474,9 +474,10 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     data = _normalize_spanish(data)
     raw_layout = data.get("layout")
     layout = raw_layout if raw_layout in SLIDE_DESIGNS else None
-    title = _esc((data.get("title") or ""), 120).strip() or "En vivo"
-    # Developed explanation: 3-5 sentences per audience (was 500/700).
-    text = _esc(data.get("text") or "", 900)
+    # Large editorial type: tight budgets so bigger glyphs never overflow.
+    # Title 8-10 words (~100 chars), body 2-3 sentences 35-45 words (~400 chars).
+    title = _esc((data.get("title") or ""), 100).strip() or "En vivo"
+    text = _esc(data.get("text") or "", 400)
     bullets = _esc_list(data.get("bullets"))
     keywords = _esc_list(data.get("keywords"), 60)
     keywords = keywords[:5]
@@ -488,7 +489,7 @@ def validate_slide(data: dict, is_opening: bool = False) -> dict:
     steps = _esc_list(data.get("steps"))
     image = _esc(data.get("image") or "", 500) or ""
     concept = _esc(data.get("concept") or "", 200) or ""
-    explanation = _esc(data.get("explanation") or "", 900) or ""
+    explanation = _esc(data.get("explanation") or "", 400) or ""
     example = _esc(data.get("example") or "", 400) or ""
     takeaway = _esc(data.get("takeaway") or "", 200) or ""
     content_type = _esc(data.get("content_type") or "", 40) or ""
@@ -763,15 +764,31 @@ def _card_code(card: object) -> str:
     )
 
 
-def _header_html(s: dict) -> str:
+def _head_html(s: dict) -> str:
+    """Shared master header: kicker position, title position, rule.
+
+    Every layout uses this (directly or via _header_html) so safe margins
+    and header geometry never drift per layout.
+    """
     kicker = f'<p class="kicker">{s.get("kicker", "")}</p>' if s.get("kicker") else ""
+    return (
+        f'<div class="head">{kicker}<h2 class="h-slide">{s.get("title", "")}</h2>'
+        f'<div class="rule"></div></div>'
+    )
+
+
+def _density_attr(count: int) -> str:
+    """data-density=high compacts gaps/paddings first on 4-item grids."""
+    return ' data-density="high"' if count >= 4 else ""
+
+
+def _header_html(s: dict) -> str:
     text = f'<p class="body-lg">{s.get("text", "")}</p>' if s.get("text") else ""
     explanation = ""
     if s.get("explanation") and s.get("explanation") != s.get("text"):
         explanation = f'<p class="body-lg">{s.get("explanation", "")}</p>'
     return (
-        f'<div class="head">{kicker}<h2 class="h-slide">{s.get("title", "")}</h2>'
-        f'<div class="rule"></div></div>{text}{explanation}'
+        f'{_head_html(s)}{text}{explanation}'
     )
 
 
@@ -797,7 +814,7 @@ def _conceptos_html(cards: list) -> str:
     if not items:
         return ""
     n = max(2, min(4, len(items)))
-    return f'<div class="conceptos grid-{n}">{"".join(items)}</div>'
+    return f'<div class="conceptos grid-{n}"{_density_attr(len(items))}>{"".join(items)}</div>'
 
 
 def _code_footer_html(s: dict) -> str:
@@ -902,6 +919,7 @@ def _cards_flex(s: dict) -> str:
 
 
 def _split_code(s: dict) -> str:
+    kicker = f'<p class="kicker">{s["kicker"]}</p>' if s.get("kicker") else ""
     bullets = _bullets_html(s.get("bullets", []))
     text = f'<p class="body-lg">{s["text"]}</p>' if s.get("text") else ""
     explanation = ""
@@ -909,7 +927,8 @@ def _split_code(s: dict) -> str:
         explanation = f'<p class="body-lg">{s.get("explanation", "")}</p>'
     code = _code_footer_html(s)
     return (
-        f'<div class="split"><div><h2 class="h-slide">{s["title"]}</h2>'
+        f'<div class="split"><div>{kicker}<h2 class="h-slide">{s["title"]}</h2>'
+        f'<div class="rule"></div>'
         f'{text}{explanation}{bullets}</div>'
         f'<div>{code}</div></div>'
     )
@@ -926,7 +945,8 @@ def _split_media(s: dict) -> str:
     code = _code_footer_html(s)
     media = _media_html(s)
     return (
-        f'<div class="split"><div>{kicker}<h2 class="h-slide">{s["title"]}</h2>'
+        f'<div class="split"><div><div class="head">{kicker}<h2 class="h-slide">{s["title"]}</h2>'
+        f'<div class="rule"></div></div>'
         f'{text}{explanation}{bullets}{conceptos}{code}</div>'
         f'{media}</div>'
     )
@@ -964,7 +984,8 @@ def _checklist_flex(s: dict) -> str:
         f'<li class="check"><span class="icon-badge">✓</span><span>{b}</span></li>'
         for b in s.get("bullets", [])[:4] if isinstance(b, str)
     )
-    checks = f'<ul class="grid-2 checks">{items}</ul>' if items else ""
+    n_items = len([b for b in s.get("bullets", [])[:4] if isinstance(b, str)])
+    checks = f'<ul class="grid-2 checks"{_density_attr(n_items)}>{items}</ul>' if items else ""
     extras = ""
     if s.get("cards"):
         extras += _conceptos_html(s.get("cards", []))
@@ -975,37 +996,37 @@ def _checklist_flex(s: dict) -> str:
 
 
 def _stats_flex(s: dict) -> str:
-    n = max(2, min(4, len(s.get("stats", []))))
+    stats = list(s.get("stats", [])[:4])
+    n = max(2, min(4, len(stats)))
     items = "".join(
         f'<div class="card"><p class="stat-value">{v}</p><p class="muted">{lb}</p></div>'
-        for v, lb in (_stat_value_label(x) for x in s.get("stats", [])[:4])
+        for v, lb in (_stat_value_label(x) for x in stats)
     )
     return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f'<div class="grid-{n}">{items}</div>'
+        f'{_head_html(s)}'
+        f'<div class="grid-{n}"{_density_attr(len(stats))}>{items}</div>'
     )
 
 
 def _chips_flex(s: dict) -> str:
-    chips = "".join(f'<span class="chip">{c}</span>' for c in s.get("chips", [])[:4])
+    chips = list(s.get("chips", [])[:4])
+    chips_html = "".join(f'<span class="chip">{c}</span>' for c in chips)
     return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f'<div class="chips">{chips}</div>'
+        f'{_head_html(s)}'
+        f'<div class="chips"{_density_attr(len(chips))}>{chips_html}</div>'
     )
 
 
 def _steps_flex(s: dict) -> str:
-    n = max(2, min(4, len(s.get("steps", []))))
+    steps = list(s.get("steps", [])[:4])
+    n = max(2, min(4, len(steps)))
     items = "".join(
         f'<div class="card"><p class="step-number">{i:02d}</p><p class="body-lg">{_step_text(st)}</p></div>'
-        for i, st in enumerate(s.get("steps", [])[:4], start=1)
+        for i, st in enumerate(steps, start=1)
     )
     return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f'<div class="grid-{n}">{items}</div>'
+        f'{_head_html(s)}'
+        f'<div class="grid-{n}"{_density_attr(len(steps))}>{items}</div>'
         f'<div class="bar"><span></span></div>'
     )
 
@@ -1037,14 +1058,10 @@ def _definition_guided(s: dict) -> str:
     concept = f'<p class="concept">{s.get("concept", "")}</p>' if s.get("concept") else ""
     explanation = f'<p class="explanation">{s.get("explanation", "")}</p>' if s.get("explanation") else ""
     example = (
-        f'<div class="example"><p class="kicker accent">Example</p><p class="body-lg">{s.get("example", "")}</p></div>'
+        f'<div class="example"><p class="kicker accent"></p><p class="body-lg">{s.get("example", "")}</p></div>'
         if s.get("example") else ""
     )
-    return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f"{concept}{explanation}{example}"
-    )
+    return f'{_head_html(s)}{concept}{explanation}{example}'
 
 
 def _concept_editorial(s: dict) -> str:
@@ -1053,11 +1070,7 @@ def _concept_editorial(s: dict) -> str:
     takeaway = (
         f'<p class="takeaway-line">{s.get("takeaway", "")}</p>' if s.get("takeaway") else ""
     )
-    return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f'<div class="editorial">{concept}{explanation}{takeaway}</div>'
-    )
+    return f'{_head_html(s)}<div class="editorial">{concept}{explanation}{takeaway}</div>'
 
 
 def _pillars_3(s: dict) -> str:
@@ -1078,22 +1091,21 @@ def _pillars_3(s: dict) -> str:
 
 
 def _timeline_4(s: dict) -> str:
+    steps = list(s.get("steps", [])[:4])
     items = "".join(
         f'<li class="timeline-item"><span class="dot"></span><span>{_step_text(st)}</span></li>'
-        for st in s.get("steps", [])[:4]
+        for st in steps
     )
     return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f'<ol class="timeline">{items}</ol>'
+        f'{_head_html(s)}'
+        f'<ol class="timeline"{_density_attr(len(steps))}>{items}</ol>'
     )
 
 
 def _takeaway(s: dict) -> str:
     takeaway = s.get("takeaway", "") or s.get("text", "")
     return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
+        f'{_head_html(s)}'
         f'<blockquote class="takeaway"><p class="h-slide">“{takeaway}”</p></blockquote>'
     )
 
@@ -1105,11 +1117,7 @@ def _stat_hero(s: dict) -> str:
         f'<p class="stat-hero-label">{label}</p></div>'
     )
     text = f'<p class="body-lg">{s["text"]}</p>' if s.get("text") else ""
-    return (
-        f'<div class="head"><h2 class="h-slide">{s["title"]}</h2>'
-        f'<div class="rule"></div></div>'
-        f"{stat}{text}"
-    )
+    return f"{_head_html(s)}{stat}{text}"
 
 
 _LAYOUT_RENDERERS = {
