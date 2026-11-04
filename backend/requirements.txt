@@ -5,3 +5,6 @@ python-multipart
 python-dotenv
 websockets
 openai
+PyJWT[crypto]
+resend
+email-validator

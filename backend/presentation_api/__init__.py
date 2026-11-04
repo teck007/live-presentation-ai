@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.presentation_api.controllers import contact, credits, presentation, transcription
+from backend.presentation_api.controllers import contact, credits, presentation, transcription, trial
 
 load_dotenv()
 
@@ -21,5 +21,6 @@ app.include_router(transcription.router)
 app.include_router(presentation.router, prefix="/api")
 app.include_router(credits.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
+app.include_router(trial.router, prefix="/api")
 
 __all__ = ["app"]
