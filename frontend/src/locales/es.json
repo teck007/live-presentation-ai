@@ -1,0 +1,260 @@
+{
+  "nav": {
+    "brand": "Live Presentation",
+    "main": "Navegación principal",
+    "howItWorks": "Cómo funciona",
+    "features": "Funciones",
+    "contact": "Contacto",
+    "home": "Inicio",
+    "signIn": "Iniciar sesión",
+    "tryLive": "Probar en vivo"
+  },
+  "landing": {
+    "badge": "Slides en vivo mientras hablas",
+    "heroTitle": "Habla. Tus diapositivas aparecen.",
+    "heroSubtitle": "Presenta sin preparar diapositivas: habla de tu tema y Live Presentation genera la presentación en tiempo real, lista para mostrar en pantalla completa.",
+    "createCta": "Crear mi presentación en vivo",
+    "seeHow": "Ver cómo funciona",
+    "stepsLabel": "Cómo funciona",
+    "stepsTitle": "Cómo funciona",
+    "stepsSubtitle": "Tres pasos y estás presentando.",
+    "steps": {
+      "s1": {
+        "title": "Define tema y audiencia",
+        "text": "Cuéntale al estudio de qué vas a hablar y para quién: el tono y el diseño se adaptan."
+      },
+      "s2": {
+        "title": "Habla",
+        "text": "Habla con naturalidad. La transcripción en vivo convierte tu voz en texto turno a turno."
+      },
+      "s3": {
+        "title": "Presenta en pantalla completa",
+        "text": "Las diapositivas aparecen solas en el escenario. Pásalas con las flechas o muéstralas en pantalla completa."
+      }
+    },
+    "featuresLabel": "Funciones",
+    "featuresTitle": "Todo pasa en tu navegador",
+    "featuresSubtitle": "Lo que ya funciona hoy en el estudio en vivo.",
+    "features": {
+      "f1": {
+        "title": "Transcripción en tiempo real",
+        "text": "Tu voz se convierte en texto al instante, con subtítulos parciales mientras hablas."
+      },
+      "f2": {
+        "title": "21 diseños automáticos",
+        "text": "El sistema elige el diseño ideal para cada idea: títulos, puntos clave, citas, comparativas y más."
+      },
+      "f3": {
+        "title": "Paletas adaptativas",
+        "text": "Cada presentación toma colores coherentes con tu tema, en modo claro y oscuro."
+      },
+      "f4": {
+        "title": "Filtro fuera de tema",
+        "text": "Los comentarios fuera de tema no ensucian tus diapositivas: se filtran sin interrumpir."
+      },
+      "f5": {
+        "title": "Imágenes progresivas",
+        "text": "Las diapositivas aparecen primero con texto y luego suman imagen generativa sin bloquear."
+      },
+      "f6": {
+        "title": "Todo en tu navegador",
+        "text": "Micrófono, escenario y navegación viven en la web: nada que instalar, solo hablar."
+      }
+    },
+    "ctaLabel": "Llamado a la acción",
+    "ctaTitle": "Pruébalo hablando, no leyendo",
+    "ctaText": "Entra al estudio, define tu tema y empieza a hablar. Las diapositivas aparecen solas.",
+    "ctaButton": "Probar en vivo ahora",
+    "contactTitle": "Hablemos",
+    "contactText": "¿Quieres usar Live Presentation en tus clases, charlas o equipo? Escríbenos y te contamos cómo empezar.",
+    "demoLabel": "Demostración simulada",
+    "demoNote": "Demo simulada, sin micrófono",
+    "demo": {
+      "t1": {
+        "transcript": "Hoy hablamos de hábitos que sostienen la energía del equipo…",
+        "title": "Energía del equipo",
+        "text": "Tres hábitos simples sostienen el ritmo sin quemar a nadie."
+      },
+      "t2": {
+        "transcript": "Primero: pausas reales, sin pantallas, cada noventa minutos…",
+        "title": "Pausas reales",
+        "text": "Descansar sin pantallas recupera la atención para el siguiente bloque."
+      },
+      "t3": {
+        "transcript": "Y para cerrar: una idea clara por diapositiva, nada más…",
+        "title": "Una idea por diapositiva",
+        "text": "Si todo importa, nada se recuerda. Una idea, una diapositiva."
+      }
+    },
+    "footerRights": "© {year} Live Presentation. Todos los derechos reservados.",
+    "footerLegal": "Enlaces legales",
+    "footerTerms": "Términos",
+    "footerPrivacy": "Privacidad"
+  },
+  "live": {
+    "skipToCanvas": "Saltar al lienzo",
+    "title": "Presentación en vivo",
+    "subtitle": "Habla y mira cómo se generan las diapositivas en tiempo real.",
+    "openMenu": "Abrir menú",
+    "closeMenu": "Cerrar menú",
+    "controlsLabel": "Controles de presentación",
+    "status": {
+      "connecting": "Conectando…",
+      "listening": "Escuchando",
+      "speaking": "Hablando",
+      "paused": "En pausa",
+      "error": "Error",
+      "idle": "Inactivo"
+    },
+    "lastTurn": "Último turno:",
+    "resume": {
+      "title": "Tenés una presentación guardada",
+      "found": "Encontramos tu sesión anterior con {n} diapositivas. ¿Querés continuar donde la dejaste?",
+      "topic": "Tema:",
+      "updated": "Actualizada:",
+      "cancel": "Cancelar",
+      "fresh": "Nueva",
+      "continue": "Continuar"
+    },
+    "testTitle": "Probar transcripción (sin hablar)",
+    "testPlaceholder": "Ej.: tiene tres pasos: primero…",
+    "testButton": "Generar diapositiva de prueba",
+    "generating": "Generando…",
+    "canvas": {
+      "label": "Lienzo de presentación",
+      "retry": "Reintentar",
+      "offTopic": "Turno fuera de tema — sin diapositiva",
+      "generatingSlide": "Generando diapositiva",
+      "generatingBadge": "Generando diapositiva…",
+      "emptyTitle": "Aún no hay diapositivas",
+      "emptyText": "Las diapositivas aparecerán aquí a medida que hables. El diseño lo elige el modelo (solo id de diseño).",
+      "currentSlide": "Diapositiva actual",
+      "preview": "Vista previa…",
+      "prevSlide": "Diapositiva anterior",
+      "nextSlide": "Diapositiva siguiente",
+      "followLive": "Seguir en vivo",
+      "fullscreen": "Pantalla completa",
+      "scaleLabel": "Tamaño del texto",
+      "scaleDecrease": "Reducir tamaño del texto",
+      "scaleIncrease": "Aumentar tamaño del texto",
+      "scaleReset": "Restablecer tamaño del texto",
+      "scaleValue": "Tamaño actual: {n}%",
+      "slidesLabel": "Diapositivas",
+      "goToSlide": "Ir a la diapositiva {n}: {title}",
+      "decoImage": "Imagen ilustrativa",
+      "decoImageAlt": "Imagen ilustrativa de la diapositiva",
+      "decoPlaceholderNote": "Marcador MVP — foto real fuera de alcance"
+    },
+    "sidebar": {
+      "subtitle": "Transcripción en vivo",
+      "liveSection": "En vivo",
+      "controlsLabel": "Controles en vivo",
+      "start": "Iniciar en vivo",
+      "stop": "Detener",
+      "clear": "Limpiar",
+      "topicLabel": "Tema principal de la presentación",
+      "topicPlaceholder": "Ej.: cambio climático",
+      "topicHint": "Lo que no coincida con este tema se descarta y no genera diapositiva.",
+      "coverAutoHint": "Al iniciar se crea la portada automáticamente.",
+      "topicWarning": "Define un tema para activar el filtro fuera de tema; sin tema, todo genera diapositiva.",
+      "audienceLabel": "Audiencia",
+      "audience": {
+        "kids": "Niños y niñas",
+        "students": "Estudiantes",
+        "general": "General",
+        "professionals": "Profesionales",
+        "experts": "Expertos"
+      },
+      "audienceHint": "Ajusta el tono y la profundidad de cada diapositiva.",
+      "batchHint": "Puedes usar el grabador por lotes de abajo como alternativa.",
+      "advanced": "Ajustes avanzados",
+      "noiseReduction": "Reducción de ruido",
+      "enableFilter": "Activar filtro",
+      "closeness": "Cercanía",
+      "closenessHint": "Más a la derecha = solo muy cercano",
+      "value": "Valor: {v}",
+      "level": "Nivel",
+      "micLevel": "Nivel de micrófono",
+      "transcriptLabel": "Transcripción en vivo",
+      "pausedEmpty": "En pausa por silencio prolongado. Habla para retomar.",
+      "listeningEmpty": "Escuchando… habla para transcribir.",
+      "complete": "Completo",
+      "offTopicShort": "Turno fuera de tema — sin diapositiva",
+      "batchTitle": "Grabador por lotes (alternativa)",
+      "batchText": "Alternativa: graba y presiona Transcribir.",
+      "transcribing": "Transcribiendo…",
+      "transcribe": "Transcribir",
+      "fullText": "Texto completo",
+      "emptyTranscript": "Transcripción vacía.",
+      "historyLabel": "Historial"
+    },
+    "recorder": {
+      "record": "Grabar",
+      "stop": "Detener ({s}s)",
+      "clear": "Limpiar",
+      "recording": "Grabando… {s}s"
+    },
+    "history": {
+      "title": "Historial ({n})",
+      "latest": "Último:",
+      "sessionId": "sessionId: {id}"
+    }
+  },
+  "contact": {
+    "formLabel": "Formulario de contacto",
+    "title": "Contacto",
+    "subtitle": "Cuéntanos qué quieres presentar y te respondemos.",
+    "name": "Nombre",
+    "namePlaceholder": "Tu nombre",
+    "email": "Correo electrónico",
+    "emailPlaceholder": "tu@correo.com",
+    "message": "Mensaje",
+    "messagePlaceholder": "¿Qué quieres lograr con tus presentaciones?",
+    "sending": "Enviando…",
+    "send": "Enviar mensaje",
+    "success": "Mensaje enviado. Te contactaremos pronto.",
+    "nameError": "Ingresa tu nombre.",
+    "emailError": "Ingresa un correo válido.",
+    "messageError": "Cuéntanos un poco más (mínimo 10 caracteres).",
+    "sendError": "No se pudo enviar: {msg}",
+    "sendErrorGeneric": "No se pudo enviar el mensaje."
+  },
+  "auth": {
+    "backHome": "← Volver a la página principal",
+    "signInTitle": "Iniciar sesión",
+    "signInSubtitle": "Entra para usar el estudio en vivo con tu prueba de 24 horas.",
+    "signUpTitle": "Crear cuenta",
+    "signUpSubtitle": "Regístrate gratis y prueba el estudio en vivo durante 24 horas.",
+    "noAccount": "¿No tienes cuenta?",
+    "createAccount": "Crear cuenta",
+    "hasAccount": "¿Ya tienes cuenta?",
+    "devNoAuth": "Autenticación no configurada en este entorno de desarrollo (falta VITE_CLERK_PUBLISHABLE_KEY)."
+  },
+  "trial": {
+    "badge": "Prueba finalizada",
+    "title": "Tu prueba de 24 horas finalizó",
+    "text": "Gracias por probar Live Presentation. Tu acceso libre al estudio en vivo terminó, pero puedes pedir una extensión: escríbenos por el formulario y te contactaremos pronto."
+  },
+  "errors": {
+    "unknown": "Error desconocido."
+  },
+  "common": {
+    "brand": "Live Presentation"
+  },
+  "a11y": {
+    "themeToLight": "Cambiar a tema claro",
+    "themeToDark": "Cambiar a tema oscuro",
+    "themeDarkActive": "Tema oscuro activo",
+    "themeLightActive": "Tema claro activo",
+    "language": "Idioma",
+    "spanish": "Español",
+    "english": "English"
+  },
+  "meta": {
+    "title": "Live Presentation — Habla. Tus diapositivas aparecen.",
+    "description": "Live Presentation genera tus diapositivas en vivo mientras hablas: transcripción en tiempo real, 21 diseños automáticos y presentación en pantalla completa.",
+    "ogTitle": "Live Presentation — Habla. Tus diapositivas aparecen.",
+    "ogDescription": "Habla de tu tema y mira cómo tus diapositivas aparecen en vivo. Sin preparar nada, todo en tu navegador.",
+    "locale": "es_ES"
+  }
+}

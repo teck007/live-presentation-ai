@@ -1,19 +1,21 @@
 <template>
-  <article class="grid h-full min-h-full gap-6 overflow-hidden rounded-none bg-gradient-to-br from-indigo-900 to-slate-900 p-8 text-left text-white md:grid-cols-2 md:p-12">
+  <article class="grid h-full min-h-full gap-6 overflow-hidden rounded-none bg-gradient-to-br from-indigo-100 to-white p-8 text-left text-[var(--text,var(--slide-text))] md:grid-cols-2 md:p-12 dark:from-indigo-950 dark:to-slate-900 dark:text-[var(--text,var(--slide-text))]">
     <div class="flex min-h-0 flex-col justify-center">
-      <h3 class="line-clamp-2 text-3xl font-bold tracking-tight md:text-4xl">{{ title }}</h3>
-      <p class="mt-4 line-clamp-5 text-lg leading-relaxed text-slate-200">{{ text }}</p>
+      <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+      <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="line-clamp-5 body-lg">{{ text }}</p>
     </div>
     <div
-      class="relative flex min-h-32 flex-col items-center justify-center overflow-hidden rounded-xl bg-white/10 text-center"
+      class="relative flex min-h-32 flex-col items-center justify-center overflow-hidden rounded-xl bg-slate-900/5 text-center ring-1 ring-black/10 dark:bg-white/10 dark:ring-white/10"
       :class="{ 'animate-pulse': hasImage && !loaded }"
       role="img"
-      aria-label="Imagen ilustrativa"
+      :aria-label="t('live.canvas.decoImage')"
     >
       <img
         v-if="hasImage"
         :src="image"
-        alt="Imagen ilustrativa del slide"
+        :alt="t('live.canvas.decoImageAlt')"
         loading="lazy"
         fetchpriority="high"
         class="slide-img absolute inset-0 h-full w-full object-cover"
@@ -22,8 +24,8 @@
       />
       <template v-else>
         <span class="text-5xl" aria-hidden="true">🖼️</span>
-        <p class="mt-3 p-6 pb-0 text-sm text-slate-300">Imagen ilustrativa</p>
-        <p class="p-6 pt-1 text-xs text-slate-400">Placeholder MVP — foto real fuera de alcance</p>
+        <p class="mt-3 p-6 pb-0 muted">{{ t("live.canvas.decoImage") }}</p>
+        <p class="p-6 pt-1 muted">{{ t("live.canvas.decoPlaceholderNote") }}</p>
       </template>
     </div>
   </article>
@@ -31,8 +33,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 // Slide layout: fills the 16:9 stage, content vertically centered.
+// Only the decorative image chrome is translated; title/text/image props
+// are model or user content and stay untouched.
+const { t } = useI18n({ useScope: "global" });
 const props = defineProps<{
   title: string;
   text: string;

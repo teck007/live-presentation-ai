@@ -1,18 +1,16 @@
 <template>
-  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-slate-900 p-8 text-left text-white md:p-12">
-    <p v-if="kicker" class="line-clamp-1 text-sm font-semibold uppercase tracking-widest text-emerald-400">{{ kicker }}</p>
-    <h3 class="line-clamp-2 text-3xl font-bold tracking-tight md:text-4xl">{{ title }}</h3>
-    <ol class="mt-6 max-h-56 space-y-3 overflow-hidden">
+  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-[var(--base,var(--slide-base))] p-8 text-left text-[var(--text,var(--slide-text))] md:p-12">
+    <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+    <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+    <div class="rule" aria-hidden="true"></div>
+    <ol class="mt-6 max-h-56 space-y-3 overflow-hidden" :data-density="steps.length >= 4 ? 'high' : null">
       <li
         v-for="(step, i) in steps.slice(0, 4)"
         :key="i"
         class="flex items-start gap-3"
       >
-        <span
-          class="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-sm font-bold text-emerald-300 ring-1 ring-emerald-400/30"
-          aria-hidden="true"
-        >{{ i + 1 }}</span>
-        <span class="line-clamp-2 min-w-0 pt-1 text-lg text-slate-200">{{ stepText(step) }}</span>
+        <span class="step-number shrink-0" aria-hidden="true">{{ String(i + 1).padStart(2, "0") }}</span>
+        <span class="line-clamp-2 min-w-0 pt-1">{{ stepText(step) }}</span>
       </li>
     </ol>
   </article>

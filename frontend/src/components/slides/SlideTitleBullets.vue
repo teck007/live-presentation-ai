@@ -1,17 +1,19 @@
 <template>
-  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden rounded-none border border-neutral-200 bg-white p-8 text-left md:p-12">
-    <h3 class="line-clamp-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">{{ title }}</h3>
-    <ul class="mt-4 max-h-56 space-y-2 overflow-hidden">
+  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden rounded-none border border-slate-200 bg-[var(--base,var(--slide-base))] p-8 text-left text-[var(--text,var(--slide-text))] md:p-12 dark:border-white/10">
+    <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+    <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+    <div class="rule" aria-hidden="true"></div>
+    <ul class="mt-4 max-h-56 space-y-2 overflow-hidden" :data-density="bullets.length >= 4 ? 'high' : null">
       <li
         v-for="(b, i) in bullets"
         :key="i"
-        class="flex items-start gap-2 text-lg text-slate-700"
+        class="flex items-start gap-2"
       >
-        <span class="mt-2 size-2 shrink-0 rounded-full bg-blue-600" aria-hidden="true"></span>
+        <span class="mt-2 size-2 shrink-0 rounded-full bg-[var(--accent,var(--slide-accent))]" aria-hidden="true"></span>
         <span class="line-clamp-2">{{ b }}</span>
       </li>
     </ul>
-    <p v-if="!bullets.length" class="mt-4 line-clamp-4 text-lg text-slate-700">{{ text }}</p>
+    <p v-if="!bullets.length" class="line-clamp-4 body-lg">{{ text }}</p>
   </article>
 </template>
 

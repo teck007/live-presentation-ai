@@ -9,7 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.4.0"
+    "@clerk/localizations": "^4.24.4",
+    "@clerk/vue": "^2.5.17",
+    "vue": "^3.4.0",
+    "vue-i18n": "^9.14.5",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

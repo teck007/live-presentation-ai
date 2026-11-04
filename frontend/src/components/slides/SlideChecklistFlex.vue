@@ -1,16 +1,15 @@
 <template>
-  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-white p-8 text-left md:p-12">
-    <h3 class="line-clamp-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">{{ title }}</h3>
-    <ul class="mt-4 max-h-56 space-y-2 overflow-hidden">
+  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-[var(--base,var(--slide-base))] p-8 text-left text-[var(--text,var(--slide-text))] md:p-12">
+    <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+    <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+    <div class="rule" aria-hidden="true"></div>
+    <ul class="mt-4 max-h-56 space-y-2 overflow-hidden" :data-density="bullets.length >= 4 ? 'high' : null">
       <li
         v-for="(item, i) in bullets.slice(0, 4)"
         :key="i"
-        class="flex items-start gap-3 text-lg text-slate-700"
+        class="check"
       >
-        <span
-          class="flex size-6 shrink-0 items-center justify-center rounded-md border border-emerald-600 text-sm font-bold text-emerald-600"
-          aria-hidden="true"
-        >✓</span>
+        <span class="icon-badge shrink-0" aria-hidden="true">✓</span>
         <span class="line-clamp-2 min-w-0">{{ item }}</span>
       </li>
     </ul>

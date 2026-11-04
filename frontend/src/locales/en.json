@@ -1,0 +1,260 @@
+{
+  "nav": {
+    "brand": "Live Presentation",
+    "main": "Primary navigation",
+    "howItWorks": "How it works",
+    "features": "Features",
+    "contact": "Contact",
+    "home": "Home",
+    "signIn": "Sign in",
+    "tryLive": "Try it live"
+  },
+  "landing": {
+    "badge": "Live slides as you speak",
+    "heroTitle": "Speak. Your slides appear.",
+    "heroSubtitle": "Present without preparing slides: talk about your topic and Live Presentation builds the deck in real time, ready to show full screen.",
+    "createCta": "Create my live presentation",
+    "seeHow": "See how it works",
+    "stepsLabel": "How it works",
+    "stepsTitle": "How it works",
+    "stepsSubtitle": "Three steps and you are presenting.",
+    "steps": {
+      "s1": {
+        "title": "Set topic and audience",
+        "text": "Tell the studio what you will talk about and for whom: tone and design adapt."
+      },
+      "s2": {
+        "title": "Speak",
+        "text": "Speak naturally. Live transcription turns your voice into text turn by turn."
+      },
+      "s3": {
+        "title": "Present full screen",
+        "text": "Slides appear on their own on stage. Move through them with arrow keys or show them full screen."
+      }
+    },
+    "featuresLabel": "Features",
+    "featuresTitle": "Everything happens in your browser",
+    "featuresSubtitle": "What already works today in the live studio.",
+    "features": {
+      "f1": {
+        "title": "Real-time transcription",
+        "text": "Your voice becomes text instantly, with partial captions as you speak."
+      },
+      "f2": {
+        "title": "21 automatic layouts",
+        "text": "The system picks the ideal design for each idea: titles, bullets, quotes, comparisons and more."
+      },
+      "f3": {
+        "title": "Adaptive palettes",
+        "text": "Each presentation takes colors matching your topic, in light and dark mode."
+      },
+      "f4": {
+        "title": "Off-topic filter",
+        "text": "Off-topic remarks never pollute your slides: they are filtered out without interrupting."
+      },
+      "f5": {
+        "title": "Progressive images",
+        "text": "Slides appear first with text, then gain a generated image without blocking."
+      },
+      "f6": {
+        "title": "All in your browser",
+        "text": "Microphone, stage and navigation live on the web: nothing to install, just speak."
+      }
+    },
+    "ctaLabel": "Call to action",
+    "ctaTitle": "Try it by speaking, not reading",
+    "ctaText": "Enter the studio, set your topic and start talking. Slides appear on their own.",
+    "ctaButton": "Try it live now",
+    "contactTitle": "Let's talk",
+    "contactText": "Want to use Live Presentation in your classes, talks or team? Write to us and we will tell you how to start.",
+    "demoLabel": "Simulated demo",
+    "demoNote": "Simulated demo, no microphone",
+    "demo": {
+      "t1": {
+        "transcript": "Today we talk about habits that sustain the team's energy…",
+        "title": "Team energy",
+        "text": "Three simple habits keep the pace without burning anyone out."
+      },
+      "t2": {
+        "transcript": "First: real breaks, no screens, every ninety minutes…",
+        "title": "Real breaks",
+        "text": "Resting without screens restores focus for the next block."
+      },
+      "t3": {
+        "transcript": "And to close: one clear idea per slide, nothing more…",
+        "title": "One idea per slide",
+        "text": "If everything matters, nothing is remembered. One idea, one slide."
+      }
+    },
+    "footerRights": "© {year} Live Presentation. All rights reserved.",
+    "footerLegal": "Legal links",
+    "footerTerms": "Terms",
+    "footerPrivacy": "Privacy"
+  },
+  "live": {
+    "skipToCanvas": "Skip to canvas",
+    "title": "Live presentation",
+    "subtitle": "Speak and watch slides generate in real time.",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "controlsLabel": "Presentation controls",
+    "status": {
+      "connecting": "Connecting…",
+      "listening": "Listening",
+      "speaking": "Speaking",
+      "paused": "Paused",
+      "error": "Error",
+      "idle": "Idle"
+    },
+    "lastTurn": "Last turn:",
+    "resume": {
+      "title": "You have a saved presentation",
+      "found": "We found your previous session with {n} slides. Want to pick up where you left off?",
+      "topic": "Topic:",
+      "updated": "Updated:",
+      "cancel": "Cancel",
+      "fresh": "New",
+      "continue": "Continue"
+    },
+    "testTitle": "Try transcription (without speaking)",
+    "testPlaceholder": "E.g.: it has three steps: first…",
+    "testButton": "Generate test slide",
+    "generating": "Generating…",
+    "canvas": {
+      "label": "Presentation canvas",
+      "retry": "Retry",
+      "offTopic": "Off-topic turn — no slide",
+      "generatingSlide": "Generating slide",
+      "generatingBadge": "Generating slide…",
+      "emptyTitle": "No slides yet",
+      "emptyText": "Slides will appear here as you speak. The model picks the design (layout id only).",
+      "currentSlide": "Current slide",
+      "preview": "Preview…",
+      "prevSlide": "Previous slide",
+      "nextSlide": "Next slide",
+      "followLive": "Follow live",
+      "fullscreen": "Full screen",
+      "scaleLabel": "Text size",
+      "scaleDecrease": "Decrease text size",
+      "scaleIncrease": "Increase text size",
+      "scaleReset": "Reset text size",
+      "scaleValue": "Current size: {n}%",
+      "slidesLabel": "Slides",
+      "goToSlide": "Go to slide {n}: {title}",
+      "decoImage": "Illustrative image",
+      "decoImageAlt": "Illustrative slide image",
+      "decoPlaceholderNote": "MVP placeholder — real photo out of scope"
+    },
+    "sidebar": {
+      "subtitle": "Live transcription",
+      "liveSection": "Live",
+      "controlsLabel": "Live controls",
+      "start": "Go live",
+      "stop": "Stop",
+      "clear": "Clear",
+      "topicLabel": "Main presentation topic",
+      "topicPlaceholder": "E.g.: climate change",
+      "topicHint": "Anything not matching this topic is discarded and generates no slide.",
+      "coverAutoHint": "Cover slide is created automatically on start.",
+      "topicWarning": "Set a topic to enable the off-topic filter; without a topic, everything generates a slide.",
+      "audienceLabel": "Audience",
+      "audience": {
+        "kids": "Kids",
+        "students": "Students",
+        "general": "General",
+        "professionals": "Professionals",
+        "experts": "Experts"
+      },
+      "audienceHint": "Adjusts the tone and depth of each slide.",
+      "batchHint": "You can use the batch recorder below as an alternative.",
+      "advanced": "Advanced settings",
+      "noiseReduction": "Noise reduction",
+      "enableFilter": "Enable filter",
+      "closeness": "Closeness",
+      "closenessHint": "Further right = only very close",
+      "value": "Value: {v}",
+      "level": "Level",
+      "micLevel": "Microphone level",
+      "transcriptLabel": "Live transcript",
+      "pausedEmpty": "Paused after long silence. Speak to resume.",
+      "listeningEmpty": "Listening… speak to transcribe.",
+      "complete": "Complete",
+      "offTopicShort": "Off-topic turn — no slide",
+      "batchTitle": "Batch recorder (fallback)",
+      "batchText": "Alternative: record and press Transcribe.",
+      "transcribing": "Transcribing…",
+      "transcribe": "Transcribe",
+      "fullText": "Full text",
+      "emptyTranscript": "Empty transcription.",
+      "historyLabel": "History"
+    },
+    "recorder": {
+      "record": "Record",
+      "stop": "Stop ({s}s)",
+      "clear": "Clear",
+      "recording": "Recording… {s}s"
+    },
+    "history": {
+      "title": "History ({n})",
+      "latest": "Latest:",
+      "sessionId": "sessionId: {id}"
+    }
+  },
+  "contact": {
+    "formLabel": "Contact form",
+    "title": "Contact",
+    "subtitle": "Tell us what you want to present and we will reply.",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "email": "Email",
+    "emailPlaceholder": "you@email.com",
+    "message": "Message",
+    "messagePlaceholder": "What do you want to achieve with your presentations?",
+    "sending": "Sending…",
+    "send": "Send message",
+    "success": "Message sent. We will contact you soon.",
+    "nameError": "Enter your name.",
+    "emailError": "Enter a valid email.",
+    "messageError": "Tell us a bit more (at least 10 characters).",
+    "sendError": "Could not send: {msg}",
+    "sendErrorGeneric": "Could not send the message."
+  },
+  "auth": {
+    "backHome": "← Back to home",
+    "signInTitle": "Sign in",
+    "signInSubtitle": "Sign in to use the live studio with your 24-hour trial.",
+    "signUpTitle": "Create account",
+    "signUpSubtitle": "Sign up for free and try the live studio for 24 hours.",
+    "noAccount": "No account yet?",
+    "createAccount": "Create account",
+    "hasAccount": "Already have an account?",
+    "devNoAuth": "Auth is not configured in this dev environment (missing VITE_CLERK_PUBLISHABLE_KEY)."
+  },
+  "trial": {
+    "badge": "Trial ended",
+    "title": "Your 24-hour trial has ended",
+    "text": "Thanks for trying Live Presentation. Your free access to the live studio is over, but you can request an extension: write to us through the form and we will contact you soon."
+  },
+  "errors": {
+    "unknown": "Unknown error."
+  },
+  "common": {
+    "brand": "Live Presentation"
+  },
+  "a11y": {
+    "themeToLight": "Switch to light theme",
+    "themeToDark": "Switch to dark theme",
+    "themeDarkActive": "Dark theme active",
+    "themeLightActive": "Light theme active",
+    "language": "Language",
+    "spanish": "Español",
+    "english": "English"
+  },
+  "meta": {
+    "title": "Live Presentation — Speak. Your slides appear.",
+    "description": "Live Presentation builds your slides live as you speak: real-time transcription, 21 automatic layouts and full-screen presenting.",
+    "ogTitle": "Live Presentation — Speak. Your slides appear.",
+    "ogDescription": "Talk about your topic and watch your slides appear live. No prep needed, all in your browser.",
+    "locale": "en_US"
+  }
+}

@@ -1,15 +1,16 @@
 <template>
-  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-slate-900 p-8 text-left text-white md:p-12">
-    <p v-if="kicker" class="line-clamp-1 text-sm font-semibold uppercase tracking-widest text-emerald-400">{{ kicker }}</p>
-    <h3 class="line-clamp-2 text-3xl font-bold tracking-tight md:text-4xl">{{ title }}</h3>
-    <div :class="['mt-6 grid min-h-0 gap-4 overflow-hidden', gridClass]">
+  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden bg-[var(--base,var(--slide-base))] p-8 text-left text-[var(--text,var(--slide-text))] md:p-12">
+    <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+    <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+    <div class="rule" aria-hidden="true"></div>
+    <div :class="['mt-6 grid min-h-0 gap-4 overflow-hidden', gridClass]" :data-density="cards.length >= 4 ? 'high' : null">
       <div
         v-for="(card, i) in cards.slice(0, 4)"
         :key="i"
-        class="min-h-0 overflow-hidden rounded-xl bg-white/5 p-4 ring-1 ring-white/10"
+        class="card min-h-0 overflow-hidden"
       >
-        <p class="line-clamp-1 text-base font-semibold text-white">{{ cardTitle(card) }}</p>
-        <p class="mt-1 line-clamp-3 text-sm leading-relaxed text-slate-300">{{ cardText(card) }}</p>
+        <p class="line-clamp-1 kicker">{{ cardTitle(card) }}</p>
+        <p class="mt-1 line-clamp-3 body-lg">{{ cardText(card) }}</p>
       </div>
     </div>
   </article>

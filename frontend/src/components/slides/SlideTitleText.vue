@@ -1,7 +1,9 @@
 <template>
-  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden rounded-none bg-slate-900 p-8 text-left text-white md:p-12">
-    <h3 class="line-clamp-2 text-3xl font-bold tracking-tight md:text-4xl">{{ title }}</h3>
-    <p class="mt-4 line-clamp-5 text-lg leading-relaxed text-slate-200">{{ text }}</p>
+  <article class="flex h-full min-h-full flex-col justify-center overflow-hidden rounded-none bg-[var(--base,var(--slide-base))] p-8 text-left text-[var(--text,var(--slide-text))] md:p-12">
+    <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
+    <h3 class="line-clamp-2 h-slide">{{ title }}</h3>
+    <div class="rule" aria-hidden="true"></div>
+    <p class="line-clamp-5 body-lg">{{ text }}</p>
   </article>
 </template>
 
