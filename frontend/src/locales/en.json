@@ -1,6 +1,6 @@
 {
   "nav": {
-    "brand": "Live Presentation",
+    "brand": "Live Presentation AI",
     "main": "Primary navigation",
     "howItWorks": "How it works",
     "features": "Features",
@@ -13,7 +13,7 @@
   "landing": {
     "badge": "Live slides as you speak",
     "heroTitle": "Speak. Your slides appear.",
-    "heroSubtitle": "Present without preparing slides: talk about your topic and Live Presentation builds the deck in real time, ready to show full screen.",
+    "heroSubtitle": "Present without preparing slides: talk about your topic and Live Presentation AI builds the deck in real time, ready to show full screen.",
     "createCta": "Create my live presentation",
     "seeHow": "See how it works",
     "stepsLabel": "How it works",
@@ -67,7 +67,7 @@
     "ctaText": "Enter the studio, set your topic and start talking. Slides appear on their own.",
     "ctaButton": "Try it live now",
     "contactTitle": "Let's talk",
-    "contactText": "Want to use Live Presentation in your classes, talks or team? Write to us and we will tell you how to start.",
+    "contactText": "Want to use Live Presentation AI in your classes, talks or team? Write to us and we will tell you how to start.",
     "demoLabel": "Simulated demo",
     "demoNote": "Simulated demo, no microphone",
     "demo": {
@@ -177,7 +177,7 @@
       "label": "Frequently asked questions",
       "title": "Frequently asked questions",
       "subtitle": "The essentials before entering the studio.",
-      "q1": "What is Live Presentation?",
+      "q1": "What is Live Presentation AI?",
       "a1": "A tool that builds your slides live as you speak: it transcribes your voice in real time and picks the ideal layout for each idea.",
       "q2": "Do I need to install anything?",
       "a2": "No. Everything runs in your browser: microphone, stage and controls live on the web.",
@@ -190,7 +190,7 @@
       "q6": "Is it free?",
       "a6": "You can try the live studio free for 24 hours after signing up. Write to us through the form if you want an extension."
     },
-    "footerRights": "© {year} Live Presentation. All rights reserved.",
+    "footerRights": "© {year} Live Presentation AI. All rights reserved.",
     "footerLegal": "Legal links",
     "footerTerms": "Terms",
     "footerPrivacy": "Privacy"
@@ -337,13 +337,13 @@
   "trial": {
     "badge": "Trial ended",
     "title": "Your 24-hour trial has ended",
-    "text": "Thanks for trying Live Presentation. Your free access to the live studio is over, but you can request an extension: write to us through the form and we will contact you soon."
+    "text": "Thanks for trying Live Presentation AI. Your free access to the live studio is over, but you can request an extension: write to us through the form and we will contact you soon."
   },
   "errors": {
     "unknown": "Unknown error."
   },
   "common": {
-    "brand": "Live Presentation"
+    "brand": "Live Presentation AI"
   },
   "a11y": {
     "themeToLight": "Switch to light theme",
@@ -355,9 +355,9 @@
     "english": "English"
   },
   "meta": {
-    "title": "Live Presentation — Speak. Your slides appear.",
-    "description": "Live Presentation builds your slides live as you speak: real-time transcription, 21 automatic layouts and full-screen presenting.",
-    "ogTitle": "Live Presentation — Speak. Your slides appear.",
+    "title": "Live Presentation AI — Speak. Your slides appear.",
+    "description": "Live Presentation AI builds your slides live as you speak: real-time transcription, 21 automatic layouts and full-screen presenting.",
+    "ogTitle": "Live Presentation AI — Speak. Your slides appear.",
     "ogDescription": "Talk about your topic and watch your slides appear live. No prep needed, all in your browser.",
     "locale": "en_US"
   }

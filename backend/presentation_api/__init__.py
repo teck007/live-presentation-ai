@@ -7,7 +7,7 @@ from backend.presentation_api.controllers import contact, credits, presentation,
 
 load_dotenv()
 
-app = FastAPI(title="Live Presentation - Presentation API")
+app = FastAPI(title="Live Presentation AI - Presentation API")
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,8 +1,8 @@
 > Built for the Meta Hackathon 2026.
 
-# Live Presentation — Speak. Your slides appear.
+# Live Presentation AI — Speak. Your slides appear.
 
-Live Presentation lets anyone present any topic without preparing a deck beforehand. Just outline what you want to talk about, set your topic and audience, and start speaking. The platform listens in real time, understands what's relevant, and generates your slides and supporting images as you talk — so you can focus on presenting, not on designing slides.
+Live Presentation AI lets anyone present any topic without preparing a deck beforehand. Just outline what you want to talk about, set your topic and audience, and start speaking. The platform listens in real time, understands what's relevant, and generates your slides and supporting images as you talk — so you can focus on presenting, not on designing slides.
 
 ## Main flow (`/live`)
 

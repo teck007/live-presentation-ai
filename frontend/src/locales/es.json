@@ -1,6 +1,6 @@
 {
   "nav": {
-    "brand": "Live Presentation",
+    "brand": "Live Presentation AI",
     "main": "Navegación principal",
     "howItWorks": "Cómo funciona",
     "features": "Funciones",
@@ -13,7 +13,7 @@
   "landing": {
     "badge": "Slides en vivo mientras hablas",
     "heroTitle": "Habla. Tus diapositivas aparecen.",
-    "heroSubtitle": "Presenta sin preparar diapositivas: habla de tu tema y Live Presentation genera la presentación en tiempo real, lista para mostrar en pantalla completa.",
+    "heroSubtitle": "Presenta sin preparar diapositivas: habla de tu tema y Live Presentation AI genera la presentación en tiempo real, lista para mostrar en pantalla completa.",
     "createCta": "Crear mi presentación en vivo",
     "seeHow": "Ver cómo funciona",
     "stepsLabel": "Cómo funciona",
@@ -67,7 +67,7 @@
     "ctaText": "Entra al estudio, define tu tema y empieza a hablar. Las diapositivas aparecen solas.",
     "ctaButton": "Probar en vivo ahora",
     "contactTitle": "Hablemos",
-    "contactText": "¿Quieres usar Live Presentation en tus clases, charlas o equipo? Escríbenos y te contamos cómo empezar.",
+    "contactText": "¿Quieres usar Live Presentation AI en tus clases, charlas o equipo? Escríbenos y te contamos cómo empezar.",
     "demoLabel": "Demostración simulada",
     "demoNote": "Demo simulada, sin micrófono",
     "demo": {
@@ -177,7 +177,7 @@
       "label": "Preguntas frecuentes",
       "title": "Preguntas frecuentes",
       "subtitle": "Lo esencial antes de entrar al estudio.",
-      "q1": "¿Qué es Live Presentation?",
+      "q1": "¿Qué es Live Presentation AI?",
       "a1": "Una herramienta que genera tus diapositivas en vivo mientras hablas: transcribe tu voz en tiempo real y elige el diseño ideal para cada idea.",
       "q2": "¿Necesito instalar algo?",
       "a2": "No. Todo funciona en tu navegador: micrófono, escenario y controles viven en la web.",
@@ -190,7 +190,7 @@
       "q6": "¿Es gratis?",
       "a6": "Puedes probar el estudio en vivo gratis durante 24 horas desde tu registro. Escríbenos por el formulario si quieres extenderlo."
     },
-    "footerRights": "© {year} Live Presentation. Todos los derechos reservados.",
+    "footerRights": "© {year} Live Presentation AI. Todos los derechos reservados.",
     "footerLegal": "Enlaces legales",
     "footerTerms": "Términos",
     "footerPrivacy": "Privacidad"
@@ -337,13 +337,13 @@
   "trial": {
     "badge": "Prueba finalizada",
     "title": "Tu prueba de 24 horas finalizó",
-    "text": "Gracias por probar Live Presentation. Tu acceso libre al estudio en vivo terminó, pero puedes pedir una extensión: escríbenos por el formulario y te contactaremos pronto."
+    "text": "Gracias por probar Live Presentation AI. Tu acceso libre al estudio en vivo terminó, pero puedes pedir una extensión: escríbenos por el formulario y te contactaremos pronto."
   },
   "errors": {
     "unknown": "Error desconocido."
   },
   "common": {
-    "brand": "Live Presentation"
+    "brand": "Live Presentation AI"
   },
   "a11y": {
     "themeToLight": "Cambiar a tema claro",
@@ -355,9 +355,9 @@
     "english": "English"
   },
   "meta": {
-    "title": "Live Presentation — Habla. Tus diapositivas aparecen.",
-    "description": "Live Presentation genera tus diapositivas en vivo mientras hablas: transcripción en tiempo real, 21 diseños automáticos y presentación en pantalla completa.",
-    "ogTitle": "Live Presentation — Habla. Tus diapositivas aparecen.",
+    "title": "Live Presentation AI — Habla. Tus diapositivas aparecen.",
+    "description": "Live Presentation AI genera tus diapositivas en vivo mientras hablas: transcripción en tiempo real, 21 diseños automáticos y presentación en pantalla completa.",
+    "ogTitle": "Live Presentation AI — Habla. Tus diapositivas aparecen.",
     "ogDescription": "Habla de tu tema y mira cómo tus diapositivas aparecen en vivo. Sin preparar nada, todo en tu navegador.",
     "locale": "es_ES"
   }

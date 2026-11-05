@@ -104,7 +104,7 @@ def send_contact_email(nombre: str, email: str, mensaje: str) -> None:
                 "from": get_contact_from(),
                 "to": [get_contact_to()],
                 "reply_to": email,
-                "subject": f"Contacto Live Presentation — {nombre}",
+                "subject": f"Contacto Live Presentation AI — {nombre}",
                 "html": body_html,
             }
         )
