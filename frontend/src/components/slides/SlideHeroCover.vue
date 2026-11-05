@@ -1,5 +1,12 @@
 <template>
-  <article class="relative flex h-full min-h-full flex-col items-center justify-center overflow-hidden bg-[var(--base,var(--slide-base))] p-8 text-center text-[var(--text,var(--slide-text))] md:p-12">
+  <article
+    class="relative flex h-full min-h-full flex-col items-center justify-center overflow-hidden p-8 text-center md:p-12"
+    :class="
+      hasImage
+        ? 'bg-[var(--base-2,var(--slide-base-2))] text-[var(--text-2)]'
+        : 'bg-[var(--base,var(--slide-base))] text-[var(--text,var(--slide-text))]'
+    "
+  >
     <img
       v-if="hasImage"
       :src="image"
@@ -11,12 +18,12 @@
       @load="onLoad"
       @error="onError"
     />
-    <div v-if="hasImage" class="absolute inset-0 bg-black/45" aria-hidden="true"></div>
+    <div v-if="hasImage" class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/45 to-black/25" aria-hidden="true"></div>
     <div class="relative flex flex-col items-center justify-center text-center">
-      <p v-if="kicker" class="line-clamp-1 kicker">{{ kicker }}</p>
-      <h3 class="mt-2 line-clamp-2 h-display">{{ title }}</h3>
-      <p v-if="subtitle" class="mt-4 line-clamp-3 max-w-2xl subtitle">{{ subtitle }}</p>
-      <p v-else-if="text" class="mt-4 line-clamp-3 max-w-2xl subtitle">{{ text }}</p>
+      <p v-if="kicker" class="line-clamp-1 kicker" :class="hasImage ? 'text-[var(--accent-2)]!' : ''">{{ kicker }}</p>
+      <h3 class="mt-2 line-clamp-2 h-display" :class="hasImage ? 'text-white!' : ''">{{ title }}</h3>
+      <p v-if="subtitle" class="mt-4 line-clamp-3 max-w-2xl subtitle" :class="hasImage ? 'text-white/85!' : ''">{{ subtitle }}</p>
+      <p v-else-if="text" class="mt-4 line-clamp-3 max-w-2xl subtitle" :class="hasImage ? 'text-white/85!' : ''">{{ text }}</p>
     </div>
   </article>
 </template>
