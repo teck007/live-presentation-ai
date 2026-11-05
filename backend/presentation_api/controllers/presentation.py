@@ -37,6 +37,17 @@ class GenerateSlideRequest(BaseModel):
     is_opening: bool | None = None
 
 
+class CoverImageRequest(BaseModel):
+    topic: str = Field(default="", max_length=300)
+    title: str = Field(default="", max_length=120)
+    language: str | None = None
+    palette_id: str | None = None
+
+
+class CoverImageResponse(BaseModel):
+    image: str | None = None
+
+
 class GenerateSlideResponse(BaseModel):
     layout: str
     title: str
@@ -300,7 +311,19 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
     # REST returns the text slide fast: short outer timeout (<10s, inner is 25s)
     # so the response never blocks on image generation. WS stays progressive
     # via background _run_image_task + slide_image_updated patch instead.
-    if should_generate_image(layout, v.get("imagen_prompt")):
+    # Opening hero guarantee: si el LLM devolvió hero_cover sin imagen_prompt,
+    # derivar fallback del título/topic para que generate_image se intente.
+    # validate_slide ya nulifica el prompt en layouts no visuales: intacto.
+    if layout == "hero_cover" and is_open and not str(v.get("imagen_prompt") or "").strip():
+        _fallback_prompt = str(v.get("title") or topic or transcript or "").strip()
+        if _fallback_prompt:
+            v["imagen_prompt"] = _fallback_prompt[:300]
+    # Cover async-only: el texto sale instantáneo; la imagen llega por
+    # POST /cover-image dedicado (o por WS slide_image_updated). No hay
+    # espera sync en la ruta cover para no perder contra el timeout.
+    if layout == "hero_cover" and is_open:
+        pass
+    elif should_generate_image(layout, v.get("imagen_prompt")):
         try:
             fast_prompt = build_fast_prompt(
                 v.get("title"), v.get("imagen_prompt"), v.get("imagen_hashtag")
@@ -346,3 +369,38 @@ async def generate(req: GenerateSlideRequest, user: dict = Depends(require_auth)
         palette_id=palette_id,
         palette=palette,
     )
+
+
+@router.post("/cover-image", response_model=CoverImageResponse)
+async def cover_image(req: CoverImageRequest, user: dict = Depends(require_auth)):
+    """Imagen async dedicada para la portada (hero_cover).
+
+    Mismo gate de trial que /generate. Fail-open: nunca lanza por fallos
+    de imagen (devuelve image None). La portada de texto ya está pintada;
+    el frontend parcha el cover-* exacto cuando la URL llega.
+    """
+    from backend.presentation_api.utils.trial import is_trial_active, trial_expires_at
+
+    if not is_trial_active(user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Tu prueba gratuita finalizó "
+                f"(venció {trial_expires_at(user).isoformat()}). "
+                "Escríbenos por el formulario de contacto y la extendemos."
+            ),
+        )
+    try:
+        normalize_language(req.language)  # valida forma; el prompt visual es EN
+        title = (req.title or "").strip()[:120]
+        topic = (req.topic or "").strip()[:300]
+        prompt_text = (title or topic).strip()
+        if not prompt_text:
+            return CoverImageResponse(image=None)
+        fast_prompt = build_fast_prompt(title or topic, prompt_text, "")
+        url = await generate_image(fast_prompt)
+        if not isinstance(url, str) or not url.startswith("https://"):
+            return CoverImageResponse(image=None)
+        return CoverImageResponse(image=url)
+    except Exception:  # noqa: BLE001 - fail-open a portada sin imagen
+        return CoverImageResponse(image=None)

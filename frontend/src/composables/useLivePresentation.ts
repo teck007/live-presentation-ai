@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { generateSlide } from "../api/presentation";
+import { generateCoverImage, generateSlide } from "../api/presentation";
 import { AuthRequiredError, TrialExpiredError } from "../api/auth";
 import type { GetTokenFn } from "../api/auth";
 import type { SlideItem, SlideReplacedEvent, SlideWsEvent, SlideWsSlideEvent, TranscriptItem } from "../types";
@@ -99,6 +99,38 @@ export function useLivePresentation(options?: {
   // Dedupe opción B: red de seguridad por turnId (el origen ya evita el doble push).
   const seenTurnIds = new Set<string>();
   let lastSentKey = "";
+  // Orphan image buffer: slide_image_updated sin target ni cover aún se
+  // guarda brevemente y se aplica al insertar la portada. Sin reintentos.
+  let pendingCoverImage: { image: string; html: string; at: number } | null = null;
+  const ORPHAN_COVER_IMAGE_TTL_MS = 60_000;
+
+  /** Portada con image https pero html sin <img: descarta el html para que
+   * monte el componente Vue (SlideCanvas prefiere v-html sobre el componente).
+   * Solo ruta de parche, sin refactor global. */
+  function ensureCoverRendersImage(slide: SlideItem): void {
+    if (slide.layout !== "hero_cover") return;
+    const img = typeof slide.image === "string" ? slide.image : "";
+    const html = typeof slide.html === "string" ? slide.html : "";
+    if (img.startsWith("https://") && !html.includes("<img")) {
+      slide.html = "";
+    }
+  }
+
+  /** Aplica el buffer huérfano a la portada recién insertada (una sola vez). */
+  function applyPendingCoverImage(coverId: string): void {
+    const buffered = pendingCoverImage;
+    pendingCoverImage = null;
+    if (!buffered) return;
+    if (Date.now() - buffered.at > ORPHAN_COVER_IMAGE_TTL_MS) return;
+    const cover = slides.value.find((s) => s.id === coverId);
+    if (!cover || cover.layout !== "hero_cover") return;
+    if (typeof cover.image === "string" && cover.image.startsWith("https://")) return;
+    cover.image = buffered.image;
+    if (buffered.html.trim()) {
+      cover.html = buffered.html;
+    }
+    ensureCoverRendersImage(cover);
+  }
   // Reintento: último intento fallido o filtrado para reencolar sin tocar auth/trial.
   const lastAttempt = ref<TranscriptItem | null>(null);
   const lastTestText = ref("");
@@ -186,6 +218,7 @@ export function useLivePresentation(options?: {
       debounceTimer = null;
     }
     pending.value = 0;
+    pendingCoverImage = null;
   }
 
   function trackTerminal(turnId: string) {
@@ -482,10 +515,44 @@ export function useLivePresentation(options?: {
         if (typeof event.image !== "string" || !event.image.startsWith("https://")) break;
         const id = `${event.turnId}-${event.seq}`;
         const target = slides.value.find((s) => s.id === id);
-        if (!target) break;
-        target.image = event.image;
-        if (typeof event.html === "string" && event.html.trim()) {
-          target.html = event.html;
+        if (target) {
+          target.image = event.image;
+          if (typeof event.html === "string" && event.html.trim()) {
+            target.html = event.html;
+          }
+          ensureCoverRendersImage(target);
+          break;
+        }
+        // Cover fallback: the REST cover (cover-*) is painted first and the
+        // WS hero for the same opening is dropped as duplicate, orphaning its
+        // async image. Redirect the patch to that cover when it is still
+        // imageless, keeping version + https guards above.
+        const first = slides.value[0];
+        if (
+          first &&
+          first.id.startsWith("cover-") &&
+          first.layout === "hero_cover" &&
+          !(typeof first.image === "string" && first.image.startsWith("https://"))
+        ) {
+          first.image = event.image;
+          if (typeof event.html === "string" && event.html.trim()) {
+            first.html = event.html;
+          }
+          ensureCoverRendersImage(first);
+          break;
+        }
+        // Orphan buffer: no target y aún no hay cover; se guarda brevemente
+        // para aplicarlo al insertar la portada. Sin reintentos.
+        if (
+          !slides.value.some(
+            (s) => s.id.startsWith("cover-") && s.layout === "hero_cover",
+          )
+        ) {
+          pendingCoverImage = {
+            image: event.image,
+            html: typeof event.html === "string" ? event.html : "",
+            at: Date.now(),
+          };
         }
         break;
       }
@@ -610,9 +677,11 @@ export function useLivePresentation(options?: {
 
   /**
    * Portada automática al Iniciar en vivo (arranque fresco, canvas vacío).
-   * Usa el mismo POST /generate con is_opening:true para forzar hero_cover.
-   * No bloquea el mic: el llamador la dispara sin await. Inserta con seq 0
-   * para quedar siempre primera aunque el WS pinte seq>=1 antes.
+   * Usa el mismo POST /generate con is_opening:true para forzar hero_cover;
+   * el backend ya no espera la imagen sync en la ruta cover, así que el
+   * texto se inserta inmediato y la imagen se pide aparte async,
+   * parchando ese cover-* exacto al llegar. Inserta con seq 0 para quedar
+   * siempre primera aunque el WS pinte seq>=1 antes.
    * Fail-open: si el LLM filtra o falla (no-auth), pinta fallback local.
    */
   async function generateCover(rawTopic: string): Promise<void> {
@@ -627,59 +696,28 @@ export function useLivePresentation(options?: {
     ) {
       return;
     }
-    pending.value += 1;
-    try {
-      const coverTranscript =
-        language.value === "en" ? `Presentation about: ${clean}` : `Presentación sobre: ${clean}`;
-      const res = await generateSlide(
+    const coverId = `cover-${Date.now()}`;
+    const coverLang = language.value;
+    // Imagen async dedicada: no bloquea el texto; parcha el cover-* exacto.
+    const fetchImage = (title: string) => {
+      void generateCoverImage(
         {
-          transcript: coverTranscript,
           topic: clean,
-          keywords: [],
+          title,
+          language: coverLang,
           palette_id: paletteId.value,
-          audience: audience.value,
-          language: language.value as "es" | "en",
-          is_opening: true,
         },
         options?.getToken,
-      );
-      if (typeof res.palette_id === "string" && res.palette_id && !paletteId.value) {
-        paletteId.value = res.palette_id;
-      }
-      if (res.filtered) {
-        insertBySeq(
-          {
-            layout: "hero_cover",
-            title: clean,
-            titulo: clean,
-            text: "",
-            texto: "",
-            bullets: [],
-            listado: [],
-            keywords: [],
-            filtered: false,
-            id: `cover-${Date.now()}`,
-            timestamp: Date.now(),
-          },
-          0,
-        );
-        return;
-      }
-      lastFiltered.value = false;
-      insertBySeq(
-        {
-          ...res,
-          layout: "hero_cover",
-          title: res.title || clean,
-          titulo: res.titulo || res.title || clean,
-          id: `cover-${Date.now()}`,
-          timestamp: Date.now(),
-        },
-        0,
-      );
-    } catch (err) {
-      if (handleAuthError(err)) return;
-      // Fallback local: el live sigue aunque el LLM falle.
+      ).then((url) => {
+        if (!url) return;
+        const cover = slides.value.find((s) => s.id === coverId);
+        if (!cover) return;
+        if (typeof cover.image === "string" && cover.image.startsWith("https://")) return;
+        cover.image = url;
+        ensureCoverRendersImage(cover);
+      });
+    };
+    const insertCover = (partial: Partial<SlideItem>) => {
       insertBySeq(
         {
           layout: "hero_cover",
@@ -691,11 +729,61 @@ export function useLivePresentation(options?: {
           listado: [],
           keywords: [],
           filtered: false,
-          id: `cover-${Date.now()}`,
+          ...partial,
+          id: coverId,
           timestamp: Date.now(),
         },
         0,
       );
+      applyPendingCoverImage(coverId);
+    };
+    pending.value += 1;
+    try {
+      const coverTranscript =
+        coverLang === "en" ? `Presentation about: ${clean}` : `Presentación sobre: ${clean}`;
+      const res = await generateSlide(
+        {
+          transcript: coverTranscript,
+          topic: clean,
+          keywords: [],
+          palette_id: paletteId.value,
+          audience: audience.value,
+          language: coverLang as "es" | "en",
+          is_opening: true,
+        },
+        options?.getToken,
+      );
+      if (typeof res.palette_id === "string" && res.palette_id && !paletteId.value) {
+        paletteId.value = res.palette_id;
+      }
+      if (res.filtered) {
+        insertCover({});
+        fetchImage(clean);
+        return;
+      }
+      lastFiltered.value = false;
+      if (typeof res.image === "string" && res.image.startsWith("https://")) {
+        insertCover({
+          ...res,
+          layout: "hero_cover",
+          title: res.title || clean,
+          titulo: res.titulo || res.title || clean,
+        });
+        return;
+      }
+      insertCover({
+        ...res,
+        layout: "hero_cover",
+        title: res.title || clean,
+        titulo: res.titulo || res.title || clean,
+        image: "",
+      });
+      fetchImage(res.title || clean);
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      // Fallback local: el live sigue aunque el LLM falle.
+      insertCover({});
+      fetchImage(clean);
     } finally {
       pending.value = Math.max(0, pending.value - 1);
     }

@@ -222,6 +222,45 @@ export async function discardLiveSession(
   return data.discarded === true;
 }
 
+/** Imagen async dedicada para la portada: texto ya pintado, parcha al llegar. */
+export interface CoverImageRequest {
+  topic: string;
+  title: string;
+  language?: string;
+  palette_id?: string | null;
+}
+
+const COVER_IMAGE_TIMEOUT_MS = 45_000;
+
+export async function generateCoverImage(
+  req: CoverImageRequest,
+  getToken?: GetTokenFn,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), COVER_IMAGE_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/presentations/cover-image`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await authHeaders(getToken)),
+      },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { image?: unknown };
+    return typeof data.image === "string" && data.image.startsWith("https://")
+      ? data.image
+      : null;
+  } catch {
+    // Fail-open: la portada de texto ya está pintada.
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Pide al backend un slide JSON desde un turno final de transcripción. */
 export async function generateSlide(
   req: GenerateSlideRequest,

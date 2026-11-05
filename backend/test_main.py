@@ -1833,3 +1833,79 @@ def test_live_session_display_scale_ownership():
         app_mod.dependency_overrides.clear()
         live.discard(owner, sid)
         live.discard(other, sid)
+
+
+def test_cover_image_success(monkeypatch):
+    """POST /cover-image: devuelve la URL https generada (fail-open)."""
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    from backend.presentation_api.controllers import presentation as pres_mod
+
+    client = TestClient(app)
+
+    async def fake_image(prompt: str):
+        assert prompt.strip()
+        return "https://img.example.com/cover.webp"
+
+    with patch.object(pres_mod, "generate_image", side_effect=fake_image):
+        r = client.post("/api/presentations/cover-image", json={
+            "topic": "fotosintesis", "title": "La fotosintesis", "language": "es",
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["image"] == "https://img.example.com/cover.webp"
+
+
+def test_cover_image_flag_off_none(monkeypatch):
+    """POST /cover-image con generacion apagada -> 200 con image None."""
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    from backend.presentation_api.controllers import presentation as pres_mod
+
+    client = TestClient(app)
+    with patch.object(pres_mod, "generate_image", new=AsyncMock(return_value=None)):
+        r = client.post("/api/presentations/cover-image", json={
+            "topic": "fotosintesis", "title": "La fotosintesis",
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["image"] is None
+
+
+def test_cover_image_fail_open(monkeypatch):
+    """POST /cover-image nunca 500: si la imagen falla -> image None."""
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    from backend.presentation_api.controllers import presentation as pres_mod
+
+    client = TestClient(app)
+
+    async def boom(prompt: str):
+        raise RuntimeError("imagen caida")
+
+    with patch.object(pres_mod, "generate_image", side_effect=boom):
+        r = client.post("/api/presentations/cover-image", json={
+            "topic": "fotosintesis", "title": "La fotosintesis",
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["image"] is None
+
+
+def test_generate_cover_sin_espera_sync(monkeypatch):
+    """Ruta cover: texto instantaneo sin espera sync de imagen (async aparte)."""
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_test")
+    from backend.presentation_api.controllers import presentation as pres_mod
+
+    client = TestClient(app)
+
+    def fake_generate(transcript, topic, keywords=None, *args, **kwargs):
+        return {"layout": "hero_cover", "title": "Fotosintesis", "text": "apertura",
+                "bullets": [], "keywords": [], "relevant": True, "filtered": False}
+
+    with (
+        patch.object(pres_mod, "generate_slide", side_effect=fake_generate),
+        patch.object(pres_mod, "generate_image", new=AsyncMock(return_value="https://img.example.com/x.webp")) as mock_img,
+    ):
+        r = client.post("/api/presentations/generate", json={
+            "transcript": "presentacion sobre fotosintesis", "topic": "fotosintesis",
+            "keywords": [], "is_opening": True,
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["layout"] == "hero_cover"
+    assert r.json()["image"] == ""
+    assert mock_img.await_count == 0

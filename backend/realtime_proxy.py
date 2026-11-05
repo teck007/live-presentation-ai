@@ -1035,12 +1035,17 @@ class RealtimeBridge:
                     should_generate_image as _should_gen,
                 )
 
-                if _should_gen(layout, slide.get("imagen_prompt")):
+                # Opening hero guarantee (WS progresivo): mismo fallback que
+                # el REST para que la imagen del hero no se omita por prompt vacío.
+                _img_prompt = str(slide.get("imagen_prompt") or "")
+                if layout == "hero_cover" and is_opening and not _img_prompt.strip():
+                    _img_prompt = str(slide.get("title") or "")
+                if _should_gen(layout, _img_prompt):
                     img_task = asyncio.create_task(
                         self._run_image_task(
                             turn_id, seq, version,
                             str(slide.get("title") or ""),
-                            str(slide.get("imagen_prompt") or ""),
+                            _img_prompt,
                             str(slide.get("imagen_hashtag") or ""),
                             dict(slide) if isinstance(slide, dict) else {},
                             is_opening,
