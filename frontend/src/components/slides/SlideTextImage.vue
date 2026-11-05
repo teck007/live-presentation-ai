@@ -21,6 +21,7 @@
         class="slide-img absolute inset-0 h-full w-full object-cover"
         :class="{ 'is-loaded': loaded }"
         @load="onLoad"
+        @error="onError"
       />
       <template v-else>
         <span class="text-5xl" aria-hidden="true">🖼️</span>
@@ -32,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 // Slide layout: fills the 16:9 stage, content vertically centered.
@@ -55,14 +56,42 @@ const props = defineProps<{
 }>();
 
 const loaded = ref(false);
+const failed = ref(false);
 
-const hasImage = computed(
-  () => typeof props.image === "string" && props.image.startsWith("https://"),
-);
+// Same guard as SlideHeroCover: remote https URLs plus local Vite-bundled
+// asset paths ("/…", "./…", "../…") with an image extension and data URIs.
+// Everything else is blocked and falls back to the placeholder.
+const LOCAL_IMAGE_RE = /\.(webp|png|jpe?g|svg)$/i;
+
+function isAllowedImage(src: unknown): src is string {
+  if (typeof src !== "string" || src.length === 0) return false;
+  if (src.startsWith("https://")) return true;
+  if (src.startsWith("data:image/")) return true;
+  const isLocalPath =
+    src.startsWith("/") || src.startsWith("./") || src.startsWith("../");
+  if (!isLocalPath) return false;
+  return LOCAL_IMAGE_RE.test(src.split("?")[0].split("#")[0]);
+}
+
+const hasImage = computed(() => !failed.value && isAllowedImage(props.image));
 
 function onLoad() {
   loaded.value = true;
 }
+
+function onError() {
+  // Broken URL: unmount the img so the placeholder returns instead of a
+  // broken frame stuck behind the pulse skeleton.
+  failed.value = true;
+}
+
+watch(
+  () => props.image,
+  () => {
+    failed.value = false;
+    loaded.value = false;
+  },
+);
 </script>
 
 <style scoped>

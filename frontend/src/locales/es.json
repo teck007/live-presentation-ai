@@ -5,6 +5,7 @@
     "howItWorks": "Cómo funciona",
     "features": "Funciones",
     "contact": "Contacto",
+    "faq": "Preguntas",
     "home": "Inicio",
     "signIn": "Iniciar sesión",
     "tryLive": "Probar en vivo"
@@ -85,6 +86,109 @@
         "title": "Una idea por diapositiva",
         "text": "Si todo importa, nada se recuerda. Una idea, una diapositiva."
       }
+    },
+    "example": {
+      "label": "Presentación de ejemplo",
+      "note": "Demo simulada del Sistema Solar, sin micrófono",
+      "play": "Reproducir demo",
+      "pause": "Pausar demo",
+      "prev": "Diapositiva anterior",
+      "next": "Diapositiva siguiente",
+      "goTo": "Ir a la diapositiva {n}",
+      "progress": "Diapositiva {n} de {total}",
+      "transcripts": {
+        "t1": "Hoy viajamos por el Sistema Solar, nuestro barrio cósmico…",
+        "t2": "El Sol concentra casi toda la masa: el 99,86 por ciento…",
+        "t3": "Los cuatro planetas cercanos al Sol son pequeños y rocosos…",
+        "t4": "En cambio, los planetas exteriores son gigantes de gas y hielo…",
+        "t5": "Todo empezó hace 4.600 millones de años, con una nube que colapsó…",
+        "t6": "Y más allá de Neptuno hay planetas enanos y cuerpos helados…",
+          "t7": "Júpiter es tan grande que en su diámetro caben once Tierras…",
+          "t8": "Y para cerrar: de ocho planetas, solo uno tiene vida conocida…",
+          "t9": "Y aquí estamos: la Tierra, nuestro hogar, flotando junto a la Luna…"
+        },
+        "slides": {
+          "s1": {
+            "kicker": "SISTEMA SOLAR",
+            "title": "El Sistema Solar",
+            "subtitle": "Ocho planetas, una estrella y 4.600 millones de años de historia",
+            "imageAlt": "Ilustración del Sistema Solar con el Sol y los ocho planetas en sus órbitas"
+          },
+        "s2": {
+          "title": "El Sol en números",
+          "stat1Value": "99,86 %",
+          "stat1Label": "de la masa total",
+          "stat2Value": "1,39 M km",
+          "stat2Label": "de diámetro",
+          "stat3Value": "5.500 °C",
+          "stat3Label": "en la superficie",
+          "stat4Value": "8 min",
+          "stat4Label": "de luz a la Tierra"
+        },
+        "s3": {
+          "title": "Los planetas rocosos",
+          "card1Title": "Mercurio",
+          "card1Text": "El más pequeño y veloz, junto al Sol",
+          "card2Title": "Venus",
+          "card2Text": "Un horno planetario bajo nubes ácidas",
+          "card3Title": "Tierra",
+          "card3Text": "Nuestro hogar, el único con vida",
+          "card4Title": "Marte",
+          "card4Text": "El planeta rojo, destino de misiones"
+        },
+        "s4": {
+          "title": "Rocosos vs. gigantes",
+          "card1Title": "Rocosos",
+          "card1Text": "Sólidos y densos, cerca del Sol",
+          "card2Title": "Gigantes",
+          "card2Text": "Júpiter, Saturno, Urano y Neptuno: gigantes de gas y hielo"
+        },
+        "s5": {
+          "title": "Cómo se formó",
+          "step1": "Una nube de gas y polvo",
+          "step2": "Colapso gravitatorio",
+          "step3": "Un disco giratorio",
+          "step4": "Nacen los planetas"
+        },
+        "s6": {
+          "title": "Más allá de los planetas",
+          "chip1": "Plutón",
+          "chip2": "Ceres",
+          "chip3": "Eris",
+          "chip4": "Cinturón de Kuiper"
+        },
+        "s7": {
+          "title": "Júpiter",
+          "value": "11 Tierras",
+          "label": "caben en el diámetro de Júpiter"
+        },
+          "s8": {
+            "title": "Para cerrar",
+            "text": "Un solo planeta con vida conocida: el nuestro"
+          },
+          "s9": {
+            "title": "La Tierra, nuestro hogar",
+            "text": "El único planeta con vida conocida, visto desde el espacio junto a la Luna",
+            "imageAlt": "Ilustración vectorial de la Tierra vista desde el espacio con la Luna cerca"
+          }
+        }
+      },
+    "faq": {
+      "label": "Preguntas frecuentes",
+      "title": "Preguntas frecuentes",
+      "subtitle": "Lo esencial antes de entrar al estudio.",
+      "q1": "¿Qué es Live Presentation?",
+      "a1": "Una herramienta que genera tus diapositivas en vivo mientras hablas: transcribe tu voz en tiempo real y elige el diseño ideal para cada idea.",
+      "q2": "¿Necesito instalar algo?",
+      "a2": "No. Todo funciona en tu navegador: micrófono, escenario y controles viven en la web.",
+      "q3": "¿En qué idiomas funciona?",
+      "a3": "La interfaz está disponible en español e inglés, y puedes presentar en el idioma de tu audiencia.",
+      "q4": "¿Qué pasa si me salgo del tema?",
+      "a4": "Los comentarios fuera de tema se filtran y no generan diapositivas, sin interrumpir tu presentación.",
+      "q5": "¿Necesito micrófono?",
+      "a5": "Sí, el estudio en vivo usa tu micrófono para transcribir. La demo de esta página es simulada y no graba nada.",
+      "q6": "¿Es gratis?",
+      "a6": "Puedes probar el estudio en vivo gratis durante 24 horas desde tu registro. Escríbenos por el formulario si quieres extenderlo."
     },
     "footerRights": "© {year} Live Presentation. Todos los derechos reservados.",
     "footerLegal": "Enlaces legales",

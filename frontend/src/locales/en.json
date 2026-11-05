@@ -5,6 +5,7 @@
     "howItWorks": "How it works",
     "features": "Features",
     "contact": "Contact",
+    "faq": "FAQ",
     "home": "Home",
     "signIn": "Sign in",
     "tryLive": "Try it live"
@@ -85,6 +86,109 @@
         "title": "One idea per slide",
         "text": "If everything matters, nothing is remembered. One idea, one slide."
       }
+    },
+    "example": {
+      "label": "Example presentation",
+      "note": "Simulated Solar System demo, no microphone",
+      "play": "Play demo",
+      "pause": "Pause demo",
+      "prev": "Previous slide",
+      "next": "Next slide",
+      "goTo": "Go to slide {n}",
+      "progress": "Slide {n} of {total}",
+      "transcripts": {
+        "t1": "Today we travel through the Solar System, our cosmic neighborhood…",
+        "t2": "The Sun holds almost all the mass: 99.86 percent of it…",
+        "t3": "The four planets closest to the Sun are small and rocky…",
+        "t4": "The outer planets, instead, are gas and ice giants…",
+        "t5": "It all started 4.6 billion years ago, with a cloud that collapsed…",
+        "t6": "And beyond Neptune there are dwarf planets and icy bodies…",
+          "t7": "Jupiter is so big that eleven Earths fit across its diameter…",
+          "t8": "And to close: of eight planets, only one has known life…",
+          "t9": "And here we are: Earth, our home, drifting next to the Moon…"
+        },
+        "slides": {
+          "s1": {
+            "kicker": "SOLAR SYSTEM",
+            "title": "The Solar System",
+            "subtitle": "Eight planets, one star and 4.6 billion years of history",
+            "imageAlt": "Illustration of the Solar System with the Sun and the eight planets on their orbits"
+          },
+        "s2": {
+          "title": "The Sun in numbers",
+          "stat1Value": "99.86%",
+          "stat1Label": "of total mass",
+          "stat2Value": "1.39M km",
+          "stat2Label": "in diameter",
+          "stat3Value": "5,500 °C",
+          "stat3Label": "surface temperature",
+          "stat4Value": "8 min",
+          "stat4Label": "of sunlight to Earth"
+        },
+        "s3": {
+          "title": "The rocky planets",
+          "card1Title": "Mercury",
+          "card1Text": "The smallest and fastest, next to the Sun",
+          "card2Title": "Venus",
+          "card2Text": "A planetary furnace under acid clouds",
+          "card3Title": "Earth",
+          "card3Text": "Our home, the only one with life",
+          "card4Title": "Mars",
+          "card4Text": "The red planet, destination of missions"
+        },
+        "s4": {
+          "title": "Rocky vs. giant",
+          "card1Title": "Rocky",
+          "card1Text": "Solid and dense, close to the Sun",
+          "card2Title": "Giants",
+          "card2Text": "Jupiter, Saturn, Uranus and Neptune: gas and ice giants"
+        },
+        "s5": {
+          "title": "How it formed",
+          "step1": "A cloud of gas and dust",
+          "step2": "Gravitational collapse",
+          "step3": "A spinning disk",
+          "step4": "The planets are born"
+        },
+        "s6": {
+          "title": "Beyond the planets",
+          "chip1": "Pluto",
+          "chip2": "Ceres",
+          "chip3": "Eris",
+          "chip4": "Kuiper Belt"
+        },
+        "s7": {
+          "title": "Jupiter",
+          "value": "11 Earths",
+          "label": "fit across Jupiter's diameter"
+        },
+          "s8": {
+            "title": "In closing",
+            "text": "Only one planet with known life: ours"
+          },
+          "s9": {
+            "title": "Earth, our home",
+            "text": "The only planet with known life, seen from space next to the Moon",
+            "imageAlt": "Vector illustration of Earth seen from space with the Moon nearby"
+          }
+        }
+      },
+    "faq": {
+      "label": "Frequently asked questions",
+      "title": "Frequently asked questions",
+      "subtitle": "The essentials before entering the studio.",
+      "q1": "What is Live Presentation?",
+      "a1": "A tool that builds your slides live as you speak: it transcribes your voice in real time and picks the ideal layout for each idea.",
+      "q2": "Do I need to install anything?",
+      "a2": "No. Everything runs in your browser: microphone, stage and controls live on the web.",
+      "q3": "Which languages does it support?",
+      "a3": "The interface is available in Spanish and English, and you can present in your audience's language.",
+      "q4": "What happens if I go off-topic?",
+      "a4": "Off-topic remarks are filtered out and generate no slides, without interrupting your talk.",
+      "q5": "Do I need a microphone?",
+      "a5": "Yes, the live studio uses your microphone to transcribe. The demo on this page is simulated and records nothing.",
+      "q6": "Is it free?",
+      "a6": "You can try the live studio free for 24 hours after signing up. Write to us through the form if you want an extension."
     },
     "footerRights": "© {year} Live Presentation. All rights reserved.",
     "footerLegal": "Legal links",

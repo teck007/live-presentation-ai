@@ -12,6 +12,9 @@
         <RouterLink :to="{ path: '/', hash: '#features' }" class="transition hover:text-slate-900 dark:hover:text-white">
           {{ t("nav.features") }}
         </RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#faq' }" class="transition hover:text-slate-900 dark:hover:text-white">
+          {{ t("nav.faq") }}
+        </RouterLink>
         <RouterLink :to="{ path: '/', hash: '#contacto' }" class="transition hover:text-slate-900 dark:hover:text-white">
           {{ t("nav.contact") }}
         </RouterLink>
